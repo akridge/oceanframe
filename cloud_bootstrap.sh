@@ -41,6 +41,10 @@ require_cmd() {
 	}
 }
 
+has_systemd() {
+	[[ -d /run/systemd/system ]] && command -v systemctl >/dev/null 2>&1
+}
+
 clone_or_update_repo() {
 	if [[ -d "${INSTALL_DIR}/.git" ]]; then
 		git -C "${INSTALL_DIR}" fetch origin "${BRANCH}"
@@ -70,7 +74,16 @@ install_prerequisites() {
 		apt-get install -y ca-certificates curl gnupg git docker.io docker-compose-plugin
 	fi
 
-	systemctl enable --now docker
+	if has_systemd; then
+		systemctl enable --now docker
+	elif command -v service >/dev/null 2>&1; then
+		service docker start || true
+	fi
+
+	if ! docker info >/dev/null 2>&1; then
+		echo "Docker daemon is not reachable. Start Docker manually on this host and rerun bootstrap." >&2
+		exit 1
+	fi
 }
 
 write_systemd_unit() {
@@ -101,7 +114,6 @@ EOF
 main() {
 	require_root
 	require_cmd apt-get
-	require_cmd systemctl
 
 	log "Preparing host"
 	install_prerequisites
@@ -115,16 +127,27 @@ main() {
 	docker compose up -d --build
 
 	log "Installing boot-time service"
-	write_systemd_unit
-	systemctl start "${SERVICE_NAME}"
+	if has_systemd; then
+		write_systemd_unit
+		systemctl start "${SERVICE_NAME}"
+	else
+		echo "systemd not detected; skipping system service installation."
+		echo "Use this command after reboot/login to bring stack up:"
+		echo "  cd ${INSTALL_DIR} && docker compose up -d"
+	fi
 
 	echo
 	echo "OceanFrame Web is deployed."
 	echo "Service   : ${SERVICE_NAME}"
 	echo "Install   : ${INSTALL_DIR}"
 	echo "Access    : http://<host-ip>/"
-	echo "Restart   : systemctl restart ${SERVICE_NAME}"
-	echo "Status    : systemctl status ${SERVICE_NAME}"
+	if has_systemd; then
+		echo "Restart   : systemctl restart ${SERVICE_NAME}"
+		echo "Status    : systemctl status ${SERVICE_NAME}"
+	else
+		echo "Restart   : cd ${INSTALL_DIR} && docker compose up -d"
+		echo "Status    : cd ${INSTALL_DIR} && docker compose ps"
+	fi
 }
 
 main "$@"
