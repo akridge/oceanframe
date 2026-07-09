@@ -1,6 +1,6 @@
-# OceanFrame Web
+# OceanFrame
 
-OceanFrame Web is a FastAPI app for uploading video files or image sequences, analyzing frames, and exporting results as CSV or ZIP.
+OceanFrame is a FastAPI app for uploading video files or image sequences, analyzing frames, and exporting results as CSV or ZIP.
 
 ## Run locally
 
@@ -28,7 +28,7 @@ Use [cloud_bootstrap.sh](cloud_bootstrap.sh) on a Linux host to install Docker, 
 Example:
 
 ```bash
-sudo bash cloud_bootstrap.sh
+curl -SL https://raw.githubusercontent.com/akridge/oceanframe/main/cloud_bootstrap.sh | sudo bash
 ```
 
 By default, bootstrap deploys from `https://github.com/akridge/oceanframe`.
