@@ -13,7 +13,7 @@ BOOTSTRAP_VERSION="2026.07.09-1"
 # Common usage:
 #   sudo bash cloud_bootstrap.sh
 # Curl-and-run usage:
-#   curl -fsSL https://raw.githubusercontent.com/akridge/oceanframe/main/cloud_bootstrap.sh | sudo bash
+#   curl -SL https://raw.githubusercontent.com/akridge/oceanframe/main/cloud_bootstrap.sh | sudo bash
 # Optional override:
 #   sudo REPO_URL=https://github.com/akridge/oceanframe bash cloud_bootstrap.sh
 
