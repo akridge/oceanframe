@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+BOOTSTRAP_VERSION="2026.07.09-1"
+
 # Cloud host bootstrap for OceanFrame Web.
 # Purpose:
 # - Install Docker and prerequisites on Debian/Ubuntu hosts
@@ -121,6 +123,8 @@ main() {
 	require_root
 	require_cmd apt-get
 
+	echo "OceanFrame bootstrap version: ${BOOTSTRAP_VERSION}"
+
 	log "Preparing host"
 	install_prerequisites
 
@@ -144,6 +148,7 @@ main() {
 
 	echo
 	echo "OceanFrame Web is deployed."
+	echo "Bootstrap : ${BOOTSTRAP_VERSION}"
 	echo "Service   : ${SERVICE_NAME}"
 	echo "Install   : ${INSTALL_DIR}"
 	echo "Access    : http://<host-ip>/"
