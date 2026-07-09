@@ -42,7 +42,8 @@ require_cmd() {
 }
 
 has_systemd() {
-	[[ -d /run/systemd/system ]] && command -v systemctl >/dev/null 2>&1
+	command -v systemctl >/dev/null 2>&1 || return 1
+	[[ "$(ps -p 1 -o comm= 2>/dev/null || true)" == "systemd" ]]
 }
 
 clone_or_update_repo() {
@@ -75,7 +76,12 @@ install_prerequisites() {
 	fi
 
 	if has_systemd; then
-		systemctl enable --now docker
+		if ! systemctl enable --now docker; then
+			echo "systemctl is present but not functional; falling back to non-systemd docker startup." >&2
+			if command -v service >/dev/null 2>&1; then
+				service docker start || true
+			fi
+		fi
 	elif command -v service >/dev/null 2>&1; then
 		service docker start || true
 	fi
