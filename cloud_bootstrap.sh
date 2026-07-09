@@ -10,6 +10,8 @@ set -euo pipefail
 #
 # Common usage:
 #   sudo bash cloud_bootstrap.sh
+# Curl-and-run usage:
+#   curl -fsSL https://raw.githubusercontent.com/akridge/oceanframe/main/cloud_bootstrap.sh | sudo bash
 # Optional override:
 #   sudo REPO_URL=https://github.com/akridge/oceanframe bash cloud_bootstrap.sh
 
@@ -49,12 +51,25 @@ clone_or_update_repo() {
 	fi
 }
 
-install_docker() {
+install_prerequisites() {
+	local need_install=0
+
+	if ! command -v git >/dev/null 2>&1; then
+		need_install=1
+	fi
+
 	if ! command -v docker >/dev/null 2>&1; then
-		log "Installing Docker and prerequisites"
+		need_install=1
+	elif ! docker compose version >/dev/null 2>&1; then
+		need_install=1
+	fi
+
+	if [[ "${need_install}" -eq 1 ]]; then
+		log "Installing prerequisites (git, docker, compose plugin)"
 		apt-get update
 		apt-get install -y ca-certificates curl gnupg git docker.io docker-compose-plugin
 	fi
+
 	systemctl enable --now docker
 }
 
@@ -87,10 +102,9 @@ main() {
 	require_root
 	require_cmd apt-get
 	require_cmd systemctl
-	require_cmd git
 
 	log "Preparing host"
-	install_docker
+	install_prerequisites
 
 	log "Cloning or updating repository"
 	mkdir -p "$(dirname "${INSTALL_DIR}")"
