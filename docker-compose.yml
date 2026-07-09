@@ -1,0 +1,19 @@
+services:
+  oceanframe:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: oceanframe-web:latest
+    container_name: oceanframe-web
+    ports:
+      - "80:80"
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: 80
+      OPEN_BROWSER: "0"
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - oceanframe_uploads:/app/uploads
+    restart: unless-stopped
+volumes:
+  oceanframe_uploads:
