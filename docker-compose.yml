@@ -1,50 +1,166 @@
+# OceanFrame — local stack.
+#
+#   docker compose up -d --build            the app, core image (~400 MB)
+#   docker compose --profile ml up -d       adds the CLIP + YOLO + SAM 3 app on 8081
+#   docker compose --profile dev up         live-reload against your working tree
+#   docker compose --profile test run --rm test         offline suite
+#   docker compose --profile live run --rm test-live    suite against gs://nmfs_odp_pifsc
+#   docker compose --profile quickstart run --rm quickstart   build a real NOAA catalog
+#
+# Everything except `app` sits behind a profile, so a plain `up` starts one
+# container and nothing else. Copy .env.example to .env to change ports, the
+# default source, or the model.
+
+x-common-env: &common-env
+  APP_HOST: 0.0.0.0
+  APP_PORT: 8080
+  OPEN_BROWSER: "0"
+  PYTHONUNBUFFERED: "1"
+
+  # ── Image library ────────────────────────────────────────────────────────
+  LIB_DATA_DIR: /data/library
+  LIB_MODEL_DIR: /models
+  # Bucket or directory offered by default in the UI, e.g.
+  #   gs://nmfs_odp_pifsc/PIFSC/ESD/ARP/pifsc-ai-data-repository
+  LIB_SOURCE: "${LIB_SOURCE:-}"
+  # auto = CLIP when installed, else the dependency-free hash descriptor.
+  LIB_EMBED_BACKEND: "${LIB_EMBED_BACKEND:-auto}"
+  # auto = use ADC when present, else an anonymous client — which is what makes
+  # NOAA's public buckets work with no credentials at all.
+  LIB_GCS_ANONYMOUS: "${LIB_GCS_ANONYMOUS:-auto}"
+  # A local path or a gs:// URI. gs:// weights are cached into LIB_MODEL_DIR.
+  LIB_YOLO_MODEL: "${LIB_YOLO_MODEL:-yolo11n.pt}"
+  LIB_SAM3_MODEL: "${LIB_SAM3_MODEL:-/models/sam3.pt}"
+  LIB_PATH_TAG_PATTERN: "${LIB_PATH_TAG_PATTERN:-}"
+  LIB_CRAWL_WORKERS: "${LIB_CRAWL_WORKERS:-8}"
+
+x-build: &build
+  context: .
+  args:
+    # Match the host user so a bind-mounted ./models stays writable and the
+    # files it creates are not owned by root.
+    UID: "${UID:-1000}"
+    GID: "${GID:-1000}"
+    # Swap in an internal mirror or a hardened base without editing files.
+    BASE_IMAGE: "${BASE_IMAGE:-python:3.12-slim}"
+
 services:
-  oceanframe:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        # Set to 1 to bake CLIP / YOLO / SAM 3 into the image.
-        WITH_ML: "${WITH_ML:-0}"
-    image: oceanframe-web:latest
-    container_name: oceanframe-web
+
+  # ── The app ───────────────────────────────────────────────────────────────
+  app:
+    build: { <<: *build, target: runtime }
+    image: oceanframe:core
+    container_name: oceanframe
+    # PID 1 reaping, so Ctrl-C and `docker stop` are immediate.
+    init: true
     ports:
-      - "80:80"
-    environment:
-      APP_HOST: 0.0.0.0
-      APP_PORT: 80
-      OPEN_BROWSER: "0"
-      PYTHONUNBUFFERED: "1"
-      # ── Image library ──────────────────────────────────────────────────────
-      LIB_DATA_DIR: /data/library
-      # Bucket or directory to offer by default, e.g. gs://my-survey-bucket/2024
-      LIB_SOURCE: "${LIB_SOURCE:-}"
-      # "auto" uses CLIP when installed and falls back to the hash descriptor.
-      LIB_EMBED_BACKEND: "${LIB_EMBED_BACKEND:-auto}"
-      # A local path or a gs:// URI; gs:// weights are cached into LIB_MODEL_DIR.
-      # NOAA publishes a coral detector at
-      #   gs://nmfs_odp_pifsc/PIFSC/ESD/ARP/pifsc-ai-data-repository/models/yolo11-esa-icra-detector.pt
-      LIB_YOLO_MODEL: "${LIB_YOLO_MODEL:-yolo11n.pt}"
-      LIB_SAM3_MODEL: "${LIB_SAM3_MODEL:-sam3.pt}"
-      LIB_MODEL_DIR: /app/models
-      # auto = use ADC when present, fall back to an anonymous client so public
-      # buckets (NOAA's open data) work with no credentials at all.
-      LIB_GCS_ANONYMOUS: "${LIB_GCS_ANONYMOUS:-auto}"
-      # Named groups become key:value tags, e.g.
-      #   (?P<year>\d{4})/(?P<site>[^/]+)/(?P<transect>T\d+)
-      LIB_PATH_TAG_PATTERN: "${LIB_PATH_TAG_PATTERN:-}"
-      # Application Default Credentials for the GCS source.
-      GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-}"
+      - "${PORT:-8080}:8080"
+    environment: *common-env
     volumes:
-      - oceanframe_uploads:/app/uploads
-      - oceanframe_library:/data/library
-      # Mount the host's ADC so the container can read gs:// without a key file.
-      # Harmless when the directory does not exist.
-      - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
-      # Model weights (sam3.pt, custom YOLO checkpoints) live outside the image.
-      - ./models:/app/models
+      - uploads:/app/uploads
+      - library:/data/library
+      - ./models:/models
     restart: unless-stopped
 
+  # ── The app, with the model stack ─────────────────────────────────────────
+  # Shares the same volumes, so a catalog built by `app` is picked up here and
+  # you can re-embed it with CLIP without re-crawling.
+  #
+  # On its own port, so `--profile ml up` brings both up rather than failing on
+  # a port clash — handy for comparing hash-descriptor and CLIP results against
+  # one catalog. Set ML_PORT=$PORT and start only this one to replace `app`.
+  app-ml:
+    profiles: ["ml"]
+    build: { <<: *build, target: ml }
+    image: oceanframe:ml
+    container_name: oceanframe-ml
+    init: true
+    ports:
+      - "${ML_PORT:-8081}:8080"
+    environment: *common-env
+    volumes:
+      - uploads:/app/uploads
+      - library:/data/library
+      - ./models:/models
+    restart: unless-stopped
+
+  # ── Live-reload development ───────────────────────────────────────────────
+  # The working tree is mounted over /app, so edits to Python, templates, CSS
+  # and JS take effect without a rebuild.
+  dev:
+    profiles: ["dev"]
+    build: { <<: *build, target: runtime }
+    image: oceanframe:core
+    container_name: oceanframe-dev
+    init: true
+    # Watch /app as a whole: naming individual --reload-dir entries silently
+    # excludes everything else, which meant edits to main.py, templates/ and
+    # static/ were ignored. The excludes keep watchfiles out of the heavy
+    # directories a working tree accumulates.
+    command: >-
+      uvicorn main:app --host 0.0.0.0 --port 8080 --reload --reload-dir /app
+      --reload-include '*.py' --reload-include '*.html'
+      --reload-include '*.css' --reload-include '*.js'
+      --reload-exclude '.venv/*' --reload-exclude '.git/*'
+      --reload-exclude 'library_data/*' --reload-exclude 'models/*'
+      --reload-exclude 'docs/*' --reload-exclude 'uploads/*'
+    ports:
+      - "${DEV_PORT:-8080}:8080"
+    environment:
+      <<: *common-env
+      LIB_DATA_DIR: /data/library
+    # A bind-mounted /app hides the image's own uploads dir, so that one stays
+    # on a volume rather than landing in your working tree.
+    volumes:
+      - .:/app
+      - uploads:/app/uploads
+      - library:/data/library
+      - ./models:/models
+
+  # ── Offline test suite ────────────────────────────────────────────────────
+  test:
+    profiles: ["test"]
+    build: { <<: *build, target: runtime }
+    image: oceanframe:core
+    environment:
+      <<: *common-env
+      LIB_DATA_DIR: /tmp/library
+    # Test dependencies are installed at run time so they never reach the
+    # shipped image.  Nothing is written to the working tree.
+    command: >-
+      sh -c "pip install --quiet --no-cache-dir -r requirements-dev.txt &&
+             python -m pytest -q"
+
+  # ── Live suite against NOAA's public bucket ───────────────────────────────
+  test-live:
+    profiles: ["live"]
+    build: { <<: *build, target: ml }
+    image: oceanframe:ml
+    environment:
+      <<: *common-env
+      LIB_DATA_DIR: /tmp/library
+      OCEANFRAME_LIVE_TESTS: "1"
+    volumes:
+      - ./models:/models
+    command: >-
+      sh -c "pip install --quiet --no-cache-dir -r requirements-dev.txt &&
+             python -m pytest tests/test_noaa_live.py -v -p no:randomly"
+
+  # ── Build a real catalog from NOAA open data ──────────────────────────────
+  # Writes into the same volume the app serves, so when it finishes you can
+  # `docker compose up -d` and browse ~2,800 real images.
+  quickstart:
+    profiles: ["quickstart"]
+    build: { <<: *build, target: "${QUICKSTART_TARGET:-runtime}" }
+    image: "oceanframe:${QUICKSTART_TAG:-core}"
+    environment:
+      <<: *common-env
+      PY: python
+    volumes:
+      - library:/data/library
+      - ./models:/models
+    command: ["./scripts/noaa_quickstart.sh"]
+
 volumes:
-  oceanframe_uploads:
-  oceanframe_library:
+  uploads:
+  library:

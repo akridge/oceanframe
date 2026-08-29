@@ -67,19 +67,38 @@ fi
 step "Catalog"
 $PY -m library.cli stats
 
-cat <<DONE
-
-Now browse it:
-
-    LIB_DATA_DIR="$LIB_DATA_DIR" \\
-    LIB_YOLO_MODEL="$ICRA" \\
-    $PY launch.py
-
-then open http://localhost/library
-
+TRY_THIS='
 Things to try:
   * filter to one Collection in the left rail, then drill the folder tree
   * click a coral crop and hit "Find similar"
   * tick "Collapse near-duplicates" on the photogrammetry collection
-  * select images, tag them, and build a dataset with a by-folder split
+  * select images, tag them, and build a dataset with a by-folder split'
+
+# Same catalog either way, but "run launch.py" is useless advice inside a
+# container, and "docker compose up" is useless advice outside one.
+if [[ -f /.dockerenv ]]; then
+	cat <<DONE
+
+Now browse it:
+
+    docker compose up -d
+    open http://localhost:${PORT:-8080}/library
+
+To tag with NOAA's coral detector, add this to .env and restart:
+
+    LIB_YOLO_MODEL=${ICRA}
+${TRY_THIS}
 DONE
+else
+	cat <<DONE
+
+Now browse it:
+
+    LIB_DATA_DIR="${LIB_DATA_DIR}" \\
+    LIB_YOLO_MODEL="${ICRA}" \\
+    ${PY} launch.py
+
+then open http://localhost/library
+${TRY_THIS}
+DONE
+fi

@@ -13,6 +13,15 @@ torch>=2.2                # Runtime for CLIP, YOLO and SAM 3
 open_clip_torch>=2.24     # CLIP image/text embeddings -> semantic search
 ultralytics>=8.3.237      # YOLO detection/segmentation, and SAM 3 (8.3.237+)
 
+# NOTE: ultralytics depends on the full `opencv-python`, which installs over the
+# `opencv-python-headless` from requirements.txt and then needs libGL/libxcb at
+# import time.  That is fine on a desktop and fatal on a headless server, so on
+# a server finish with:
+#
+#     pip uninstall -y opencv-python && pip install --force-reinstall opencv-python-headless
+#
+# The `ml` Docker target does this for you.
+
 # Optional: approximate nearest neighbours for catalogs past ~200k images.
 # The exact scan is used until then, and stays exact for any filtered query.
 # hnswlib>=0.8

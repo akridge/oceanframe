@@ -20,12 +20,71 @@ The app starts on `http://127.0.0.1:80` by default and opens a browser window.
 ## Run with Docker
 
 ```bash
+make env          # writes .env with your uid/gid
+make up           # http://localhost:8080/library
+```
+
+Or without make:
+
+```bash
+cp .env.example .env && echo "UID=$(id -u)" >> .env && echo "GID=$(id -g)" >> .env
 docker compose up -d --build
 ```
 
-The container listens on `http://localhost:80` and uses a persistent Docker volume for `uploads/`, including generated thumbnails.
+The container listens on **8080** as a non-root user, so no privileged port and
+no root-owned files. State lives in named volumes, and `/healthz` backs a
+container healthcheck.
 
-For a cloud workstation or VM, use `restart: unless-stopped` from [docker-compose.yml](docker-compose.yml) so the service comes back after a machine reboot as long as Docker starts on boot.
+### Profiles
+
+Everything except the app is behind a compose profile, so a plain `up` starts
+one container.
+
+| Command | What it does |
+| --- | --- |
+| `make up` | The app on the core image (451 MB, no torch) |
+| `make up-ml` | The app with CLIP, YOLO and SAM 3, on its own port (8081) so it can run alongside `app` |
+| `make dev` | Live reload against your working tree |
+| `make test` | The offline suite, inside the image |
+| `make test-live` | The suite against `gs://nmfs_odp_pifsc` |
+| `make quickstart` | Index ~2,800 real NOAA images into the app's volume |
+| `make down` / `make clean` | Stop / stop and delete the catalog |
+
+`make help` lists them all. To go from nothing to a real catalog in a browser:
+
+```bash
+make quickstart && make up
+```
+
+### Two images
+
+`runtime` is the default and carries no model stack: indexing, quality scoring,
+image similarity, dedupe, tagging and dataset export all work on the
+dependency-free descriptor. `ml` adds torch, CLIP and Ultralytics for semantic
+text search and model tagging, and is a separate build target so rebuilding the
+app never re-resolves 3 GB of wheels.
+
+Neither image installs any system packages: `requirements.txt` pins
+`opencv-python-headless`, which drops the GUI bindings and with them the
+`libGL`/`libxcb` dependency. The `ml` target swaps Ultralytics' full
+`opencv-python` back out for the same reason — without it `import cv2` fails
+inside the container.
+
+### Private buckets
+
+Public buckets need no credentials at all. For a private one, run
+`gcloud auth application-default login` and add the overlay:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gcloud.yml up -d
+```
+
+It is a separate file because bind-mounting a possibly-missing
+`~/.config/gcloud` makes Docker create it as a root-owned directory on your host.
+
+For a VM or workstation, `restart: unless-stopped` in
+[docker-compose.yml](docker-compose.yml) brings the stack back after a reboot as
+long as Docker starts on boot.
 
 ## Host bootstrap
 
@@ -228,6 +287,8 @@ Optional, in [requirements-ml.txt](requirements-ml.txt):
 - `launch.py`: Local app launcher used by `python launch.py`.
 - `main.py`: FastAPI application entrypoint and router registration.
 - `docker-start.sh`: Convenience script to build/start the Docker stack and show status.
+- `Makefile`: `make help` — build, run, test and quickstart wrappers around compose.
+- `docker-compose.gcloud.yml`: Overlay that mounts host ADC for private buckets.
 - `cloud_bootstrap.sh`: End-to-end Linux host bootstrap for Docker deploy + systemd startup.
 - `deploy/workstation_setup.sh`: Google Cloud Workstation setup for the image library.
 - `library/cli.py`: Batch index / embed / annotate / search / dataset commands.

@@ -42,6 +42,18 @@ app.include_router(export.router, prefix="/api")
 app.include_router(library.router, prefix="/api")
 
 
+@app.get("/healthz")
+async def healthz() -> dict:
+    """
+    Liveness probe for container orchestration.
+
+    Deliberately touches neither the catalog nor the models: a health check that
+    opens SQLite would report unhealthy during a long write, and one that loads
+    CLIP would never answer inside the start period.
+    """
+    return {"status": "ok"}
+
+
 @app.get("/")
 async def index(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")

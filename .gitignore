@@ -17,3 +17,6 @@ models/*
 *.pt
 !models/README.md
 library_data/
+
+# Local compose configuration (ports, uid/gid, source, model)
+.env

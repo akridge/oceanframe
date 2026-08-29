@@ -184,7 +184,9 @@ re-indexing: an unchanged blob is skipped without ever being downloaded.
 | Target | Entry point |
 | --- | --- |
 | Local | `pip install -r requirements.txt && python launch.py` → `/library` |
-| Docker | `docker compose up -d --build` (named volume keeps `library_data/`) |
+| Docker | `make up` — core image, 451 MB, no torch. `make up-ml` adds the model stack. Named volumes keep the catalog. |
+| Docker, real data | `make quickstart && make up` — ~2,800 NOAA images, no credentials |
+| Docker, tests | `make test` (offline) and `make test-live` (against the NOAA bucket) |
 | Cloud Workstation | `deploy/workstation_setup.sh` — installs deps, wires ADC, systemd unit, and prints the tunnel command |
 | CLI / batch | `python -m library.cli index\|embed\|annotate\|search\|dataset` |
 | Try it with no bucket | `python scripts/make_demo_library.py /tmp/demo && LIB_SOURCE=/tmp/demo python launch.py` |
@@ -233,6 +235,24 @@ OceanFrame quality score.*
 
 *Each source keeps its own path-tag rule and its own last-scanned time.
 Re-indexing skips objects whose GCS generation has not changed.*
+
+### Container notes
+
+Neither image installs a system package. `requirements.txt` pins
+`opencv-python-headless`, which drops the GUI bindings and with them
+`libGL`/`libxcb`; the `ml` target has to swap Ultralytics' full `opencv-python`
+back out afterwards, because it installs over the headless build and then fails
+at `import cv2` with `libxcb.so.1: cannot open shared object file`.
+
+The app runs as an unprivileged uid on port 8080, and `USER` is set
+*numerically* — `USER oceanframe` breaks outright when the build's `UID` matches
+an account that already exists (notably `UID=0`), because the `useradd` is
+best-effort.
+
+`LIB_MODEL_DIR` is frequently read-only or owned by a different uid — a
+bind-mounted `./models` is the common case — so weights already present there
+are used from there, while downloads fall back to a writable temp dir with a
+warning that says how to make it stick.
 
 ## 7. What real data changed
 
