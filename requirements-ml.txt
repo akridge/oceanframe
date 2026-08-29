@@ -1,0 +1,18 @@
+# Optional model stack for the image library.  The app runs without any of it —
+# indexing, quality scoring, image-to-image similarity, dedupe, tagging and
+# dataset export all work on the dependency-free hash descriptor.  Install this
+# to add semantic *text* search and model-driven tagging.
+#
+#     pip install -r requirements-ml.txt
+#     LIB_EMBED_BACKEND=clip python -m library.cli embed --rebuild
+#
+# On a GPU workstation install the CUDA build of torch first, following
+# https://pytorch.org/get-started/locally/, then this file.
+
+torch>=2.2                # Runtime for CLIP, YOLO and SAM 3
+open_clip_torch>=2.24     # CLIP image/text embeddings -> semantic search
+ultralytics>=8.3.237      # YOLO detection/segmentation, and SAM 3 (8.3.237+)
+
+# Optional: approximate nearest neighbours for catalogs past ~200k images.
+# The exact scan is used until then, and stays exact for any filtered query.
+# hnswlib>=0.8

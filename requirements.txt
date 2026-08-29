@@ -1,8 +1,13 @@
-fastapi>=0.111            # API framework for upload, stream, export endpoints
+# ── Core app (frame analyser + image library) ─────────────────────────────────
+fastapi>=0.111            # API framework for upload, stream, export, library routes
 uvicorn[standard]>=0.29   # ASGI server used to run the FastAPI app
 python-multipart>=0.0.9   # Handles multipart/form-data file uploads
 jinja2>=3.1               # Server-side HTML template rendering
 opencv-python>=4.9        # Video decode, frame reads, and image processing
-numpy>=1.26               # Numeric arrays and frame math utilities
+numpy>=1.26               # Numeric arrays, frame math, and vector search
 Pillow>=10.3              # Thumbnail/image encode and resize helpers
 piexif>=1.1               # Optional EXIF metadata embedding on JPEG export
+pydantic>=2.6             # Request body validation for the library API
+
+# ── Image library: Google Cloud Storage source ───────────────────────────────
+google-cloud-storage>=2.16  # Lists and reads gs:// objects using ADC

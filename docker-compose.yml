@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Set to 1 to bake CLIP / YOLO / SAM 3 into the image.
+        WITH_ML: "${WITH_ML:-0}"
     image: oceanframe-web:latest
     container_name: oceanframe-web
     ports:
@@ -12,8 +15,29 @@ services:
       APP_PORT: 80
       OPEN_BROWSER: "0"
       PYTHONUNBUFFERED: "1"
+      # ── Image library ──────────────────────────────────────────────────────
+      LIB_DATA_DIR: /data/library
+      # Bucket or directory to offer by default, e.g. gs://my-survey-bucket/2024
+      LIB_SOURCE: "${LIB_SOURCE:-}"
+      # "auto" uses CLIP when installed and falls back to the hash descriptor.
+      LIB_EMBED_BACKEND: "${LIB_EMBED_BACKEND:-auto}"
+      LIB_YOLO_MODEL: "${LIB_YOLO_MODEL:-yolo11n.pt}"
+      LIB_SAM3_MODEL: "${LIB_SAM3_MODEL:-sam3.pt}"
+      # Named groups become key:value tags, e.g.
+      #   (?P<year>\d{4})/(?P<site>[^/]+)/(?P<transect>T\d+)
+      LIB_PATH_TAG_PATTERN: "${LIB_PATH_TAG_PATTERN:-}"
+      # Application Default Credentials for the GCS source.
+      GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-}"
     volumes:
       - oceanframe_uploads:/app/uploads
+      - oceanframe_library:/data/library
+      # Mount the host's ADC so the container can read gs:// without a key file.
+      # Harmless when the directory does not exist.
+      - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
+      # Model weights (sam3.pt, custom YOLO checkpoints) live outside the image.
+      - ./models:/app/models
     restart: unless-stopped
+
 volumes:
   oceanframe_uploads:
+  oceanframe_library:

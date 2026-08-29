@@ -12,3 +12,8 @@ uploads/*
 !uploads/.gitkeep
 uploads/thumbs/*
 !uploads/thumbs/.gitkeep
+# Model weights are large and often licence-gated — keep them out of git.
+models/*
+*.pt
+!models/README.md
+library_data/

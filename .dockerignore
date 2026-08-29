@@ -13,3 +13,9 @@ uploads/*
 uploads/thumbs/*
 !uploads/thumbs/.gitkeep
 *.log
+# Library catalog + derived data (rebuilt from the source bucket)
+library_data/
+# Model weights are mounted in, not baked into the image
+models/*.pt
+*.pt
+tests/
