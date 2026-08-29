@@ -97,6 +97,9 @@ WORK_MAX_EDGE = _env_int("LIB_WORK_MAX_EDGE", 1024)
 # "auto" picks clip when importable, otherwise hash.
 EMBED_BACKEND = _env("LIB_EMBED_BACKEND", "auto")
 CLIP_MODEL    = _env("LIB_CLIP_MODEL", "ViT-B-32")
+# A pretrained tag, or "random" for an untrained model.  Empty is rejected:
+# open_clip silently initialises randomly and only logs a warning, which turns
+# every embedding meaningless without anything failing.
 CLIP_PRETRAIN = _env("LIB_CLIP_PRETRAINED", "laion2b_s34b_b79k")
 CLIP_HF_MODEL = _env("LIB_CLIP_HF_MODEL", "openai/clip-vit-base-patch32")
 CLIP_DEVICE   = _env("LIB_CLIP_DEVICE", "auto")

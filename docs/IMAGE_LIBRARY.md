@@ -207,6 +207,16 @@ collapsing, exact-vs-brute-force vector ranking, split leakage, every export
 format, and the HTTP surface. It needs no GPU, no network, and no model weights —
 which is the point of the hash backend.
 
+`tests/test_clip_pipeline.py` covers the semantic-search path. open_clip can
+build its architecture with random weights and no network, so these run the real
+`ClipEmbedder` end to end — preprocessing, tokenising, batching, L2
+normalisation, the 512-d vector store, and the planner's text branch composing
+with structured filters. That catches a shape, dtype, device or
+dimension-plumbing bug exactly as well as real weights would; what it cannot
+prove is that the *ranking means something*, which is a property of the model.
+`test_semantic_ranking_is_meaningful` asserts precisely that and is skipped
+unless `OCEANFRAME_CLIP_WEIGHTS=1` lets it fetch real weights.
+
 `tests/test_noaa_live.py` runs against the live NOAA bucket, gated behind
 `OCEANFRAME_LIVE_TESTS=1`. Each of its cases exists because of a bug found by
 pointing the library at real data: anonymous access, uppercase `.PNG`/`.JPG`,
@@ -295,8 +305,11 @@ have ranked the 24 MP camera top on sharpness alone regardless of content.
 
 ## 8. What is not covered by the tests
 
-* **CLIP inference.** The code path is exercised only by its fallback. Verifying
-  it needs the weights, which means network access to the model host.
+* **CLIP ranking quality.** The code path around the model is covered offline
+  (see above); whether "a school of fish over sand" returns the right photo is
+  the model's property, and asserting it needs the real weights.
+  `OCEANFRAME_CLIP_WEIGHTS=1 python -m pytest tests/test_clip_pipeline.py`
+  runs that check on a machine that can reach the model host.
 * **SAM 3.** The adapter is written against
   `ultralytics.models.sam.SAM3SemanticPredictor`, but the weights are
   access-gated on Hugging Face and cannot be fetched automatically, so the

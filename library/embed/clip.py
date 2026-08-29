@@ -12,6 +12,7 @@ Both are imported lazily so that a deployment without torch still starts.
 """
 from __future__ import annotations
 
+import logging
 import threading
 
 import numpy as np
@@ -33,6 +34,30 @@ class ClipUnavailable(RuntimeError):
     def __init__(self, message: str, *, packages_missing: bool) -> None:
         super().__init__(message)
         self.packages_missing = packages_missing
+
+
+# Values that explicitly select an untrained model, for tests that need to run
+# the whole pipeline without downloading 600 MB of weights.
+_UNTRAINED_TAGS = {"random", "none"}
+
+
+def _resolve_pretrained(tag: str) -> str | None:
+    """
+    Map ``LIB_CLIP_PRETRAINED`` to open_clip's ``pretrained`` argument.
+
+    open_clip treats an empty value as "initialise randomly" and only logs a
+    warning, which is a nasty way to lose a day: every embedding comes out
+    meaningless but nothing fails.  An empty tag is therefore an error here, and
+    untrained models have to be asked for by name.
+    """
+    tag = (tag or "").strip()
+    if not tag:
+        raise ValueError(
+            "LIB_CLIP_PRETRAINED is empty. Set it to a pretrained tag such as "
+            "'laion2b_s34b_b79k', or to 'random' if you deliberately want an "
+            "untrained model (tests only — the embeddings are meaningless)."
+        )
+    return None if tag.lower() in _UNTRAINED_TAGS else tag
 
 
 def _pick_device(requested: str) -> str:
@@ -59,6 +84,7 @@ class ClipEmbedder(Embedder):
         self.device = _pick_device(settings.CLIP_DEVICE)
         self.name = "clip"
         self.dim = 0
+        self.untrained = False
         self._load()
 
     # ── loading ───────────────────────────────────────────────────────────────
@@ -94,8 +120,9 @@ class ClipEmbedder(Embedder):
         import open_clip  # noqa: PLC0415
         import torch  # noqa: PLC0415
 
+        pretrained = _resolve_pretrained(settings.CLIP_PRETRAIN)
         model, _, preprocess = open_clip.create_model_and_transforms(
-            settings.CLIP_MODEL, pretrained=settings.CLIP_PRETRAIN, device=self.device
+            settings.CLIP_MODEL, pretrained=pretrained, device=self.device
         )
         model.eval()
         self._impl = "open_clip"
@@ -103,7 +130,19 @@ class ClipEmbedder(Embedder):
         self._model = model
         self._preprocess = preprocess
         self._tokenizer = open_clip.get_tokenizer(settings.CLIP_MODEL)
-        self.name = f"open_clip/{settings.CLIP_MODEL}/{settings.CLIP_PRETRAIN}"
+        self.untrained = pretrained is None
+        # The tag is part of the name, and the name is the vector store's
+        # identity: changing weights therefore invalidates the stored vectors
+        # automatically instead of silently mixing two embedding spaces.
+        tag = "random" if self.untrained else settings.CLIP_PRETRAIN
+        self.name = f"open_clip/{settings.CLIP_MODEL}/{tag}"
+        if self.untrained:
+            logging.getLogger(__name__).warning(
+                "CLIP is running with RANDOMLY INITIALISED weights "
+                "(LIB_CLIP_PRETRAINED=%s). Similarity and text search will be "
+                "meaningless. This mode exists to exercise the pipeline in tests.",
+                settings.CLIP_PRETRAIN,
+            )
         with torch.no_grad():
             probe = model.encode_image(preprocess(Image.new("RGB", (32, 32))).unsqueeze(0).to(self.device))
         self.dim = int(probe.shape[-1])

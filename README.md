@@ -254,15 +254,24 @@ turning `test/CORAL_BL/MAI-B2483_2019_12_16130.PNG` into `split:test`,
 pip install pytest && python -m pytest
 ```
 
-The default suite is offline and needs no GPU, network or model weights. A
-second suite runs against the live NOAA bucket and covers what synthetic
-fixtures cannot — anonymous access, uppercase extensions, prefixes containing
-spaces, 13 MB source frames, and incremental re-crawls driven by GCS
-generations:
+The default suite is offline and needs no GPU, network or model weights.
+`make test` runs it inside the container.
+
+Two further suites cover what synthetic fixtures cannot:
 
 ```bash
+# Against NOAA's public bucket: anonymous access, uppercase extensions,
+# prefixes containing spaces, 13 MB frames, incremental re-crawls.
 OCEANFRAME_LIVE_TESTS=1 python -m pytest tests/test_noaa_live.py -v
+
+# Semantic ranking with real CLIP weights (downloads ~600 MB).
+OCEANFRAME_CLIP_WEIGHTS=1 python -m pytest tests/test_clip_pipeline.py -v
 ```
+
+The CLIP suite otherwise runs offline against a randomly-initialised model,
+which exercises every line around the model — preprocessing, tokenising,
+normalisation, the 512-d store, the planner's text branch — without a download.
+Only the "does the ranking mean anything" test needs the weights.
 
 ## Dependency Reference
 

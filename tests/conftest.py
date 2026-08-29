@@ -8,6 +8,7 @@ between tests.
 from __future__ import annotations
 
 import importlib
+import os
 import sys
 from pathlib import Path
 
@@ -21,7 +22,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 def library(tmp_path, monkeypatch):
     """A fresh, isolated library package rooted at a temp directory."""
     monkeypatch.setenv("LIB_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("LIB_EMBED_BACKEND", "hash")
+    # Default to the dependency-free descriptor. The CLIP module raises this to
+    # "clip" for its own duration via a module-scoped MonkeyPatch, which is
+    # applied before this fixture runs and undone after.
+    monkeypatch.setenv("LIB_EMBED_BACKEND", os.getenv("LIB_EMBED_BACKEND", "hash"))
     monkeypatch.setenv("LIB_PATH_TAG_PATTERN", r"(?P<year>\d{4})/(?P<site>[^/]+)")
 
     from library import settings
