@@ -26,6 +26,10 @@ CREATE TABLE IF NOT EXISTS sources (
     kind      TEXT NOT NULL,              -- 'gcs' | 'local'
     root      TEXT NOT NULL UNIQUE,       -- 'gs://bucket/prefix' | '/abs/path'
     label     TEXT NOT NULL DEFAULT '',
+    -- Regex whose named groups become key:value tags for this source.  Per
+    -- source, not global: one bucket routinely holds collections with quite
+    -- different path conventions.
+    tag_pattern TEXT NOT NULL DEFAULT '',
     added_at  REAL NOT NULL,
     scanned_at REAL NOT NULL DEFAULT 0
 );
@@ -185,6 +189,7 @@ def init_db() -> None:
     with _write_lock:
         _migrate_fts(conn)
         conn.executescript(_SCHEMA)
+        _add_missing_columns(conn)
         conn.execute(
             "INSERT INTO meta(key, value) VALUES('schema_version', ?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -229,6 +234,21 @@ def _migrate_fts(conn: sqlite3.Connection) -> None:
               FROM assets a
             """
         )
+
+
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    """
+    Additive migrations for catalogs created by an earlier build.
+
+    CREATE TABLE IF NOT EXISTS leaves an existing table alone, so new columns
+    have to be added explicitly rather than by editing _SCHEMA.
+    """
+    for table, column, ddl in (
+        ("sources", "tag_pattern", "ALTER TABLE sources ADD COLUMN tag_pattern TEXT NOT NULL DEFAULT ''"),
+    ):
+        existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(ddl)
 
 
 def fts_upsert(conn: sqlite3.Connection, asset_id: int, name: str, folder: str, tags: str) -> None:

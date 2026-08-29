@@ -47,6 +47,16 @@
   <!-- ── Left rail: scope and filters ─────────────────────────────────── -->
   <aside class="lib-rail">
 
+    <section class="card" id="collections-card">
+      <div class="card-header compact">
+        <h2 class="card-title">Collections</h2>
+        <button type="button" class="link-btn" id="sources-reset">All</button>
+      </div>
+      <div class="card-body">
+        <div id="source-filter" class="source-filter"></div>
+      </div>
+    </section>
+
     <section class="card">
       <div class="card-header compact">
         <h2 class="card-title">Folders</h2>
@@ -178,6 +188,9 @@
       <option value="yolo">YOLO</option>
       <option value="sam3">SAM 3 concepts</option>
     </select>
+    <input type="text" id="annotate-weights" class="tag-input wide" list="model-suggestions"
+           placeholder="model (blank = default)" title="Local path or gs:// URI" />
+    <datalist id="model-suggestions"></datalist>
     <input type="text" id="annotate-prompts" class="tag-input" placeholder="fish, coral, diver" />
     <button type="button" class="btn btn-secondary btn-sm" id="annotate-run">Detect</button>
   </div>
@@ -198,6 +211,7 @@
         <div class="detail-canvas-wrap">
           <img id="detail-img" alt="" />
           <svg id="detail-overlay" class="detail-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+          <div id="detail-boxes" class="detail-boxes"></div>
         </div>
         <div class="detail-strip">
           <h4 class="detail-h4">Visually similar</h4>

@@ -188,11 +188,13 @@ def items(dataset_id: int, split: str = "", limit: int = 500, offset: int = 0) -
         params.append(split)
     rows = conn.execute(
         f"""
-        SELECT a.*, di.split,
+        SELECT a.*, di.split, s.label AS source_label,
                (SELECT GROUP_CONCAT(t.name, char(31)) FROM asset_tags at JOIN tags t ON t.id = at.tag_id
                  WHERE at.asset_id = a.id) AS tags,
                (SELECT GROUP_CONCAT(DISTINCT d.label) FROM detections d WHERE d.asset_id = a.id) AS det_labels
-          FROM dataset_items di JOIN assets a ON a.id = di.asset_id
+          FROM dataset_items di
+          JOIN assets a  ON a.id = di.asset_id
+          JOIN sources s ON s.id = a.source_id
          WHERE {clause} ORDER BY a.folder, a.name LIMIT ? OFFSET ?
         """,
         [*params, limit, offset],

@@ -25,7 +25,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from library import settings
+from library import modelcache, settings
 from library.annotate.base import Annotator, xyxy_to_norm
 from library.models import AnnotatorStatus, Detection
 
@@ -51,7 +51,10 @@ class Sam3Annotator(Annotator):
     def _weights_present(self) -> bool:
         # Unlike other Ultralytics checkpoints these are never fetched for us,
         # so a missing file is the common case and deserves a clear message.
-        return Path(self.model_ref).expanduser().exists()
+        try:
+            return Path(modelcache.resolve(self.model_ref)).expanduser().exists()
+        except Exception:
+            return False
 
     def _ensure_predictor(self):
         if self._predictor is not None or self._error:
@@ -70,7 +73,7 @@ class Sam3Annotator(Annotator):
                         "conf": settings.SAM3_CONF,
                         "task": "segment",
                         "mode": "predict",
-                        "model": str(Path(self.model_ref).expanduser()),
+                        "model": str(Path(modelcache.resolve(self.model_ref)).expanduser()),
                         "save": False,
                         "verbose": False,
                     }

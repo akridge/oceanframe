@@ -52,6 +52,58 @@ Point it at a bucket and it builds a searchable catalog: thumbnails, OceanFrame
 quality scores, perceptual hashes for near-duplicate collapsing, CLIP embeddings
 for similarity and text search, and folder-derived tags.
 
+![The library browsing 2,820 images from three NOAA PIFSC collections](docs/images/shot-1-library.png)
+
+*2,820 real images from `gs://nmfs_odp_pifsc`: coral bleaching classifier crops,
+MOUSS fish-detection stills, and CRCP photogrammetry frames in one catalog. Tags
+on the left (`island:MAI`, `class:CORAL_BL`, `split:test`) were derived from the
+bucket's own folder and filename conventions.*
+
+### Try it on real NOAA data, right now
+
+NOAA's PIFSC open-data bucket is world-readable, so this needs no GCP project
+and no `gcloud` login:
+
+```bash
+./scripts/noaa_quickstart.sh
+```
+
+That indexes ~2,800 images from three collections in
+[`gs://nmfs_odp_pifsc`](https://console.cloud.google.com/storage/browser/nmfs_odp_pifsc),
+gives each one a path-tag rule matching its own convention, and tags the coral
+imagery with NOAA's own ESA/ICRA detector. Measured on a 16-worker crawl:
+
+| Collection | Images | Source size | Wall clock |
+| --- | --- | --- | --- |
+| Coral bleaching classifier (224px PNG) | 1,800 | 132 MB | 32 s |
+| MOUSS fish detection 2016 | 900 | 37 MB | 27 s |
+| CRCP photogrammetry (6000×4000 JPG) | 120 | 1.5 GB | 28 s |
+
+The resulting catalog — thumbnails, vectors, metrics and all — is 32 MB on disk.
+
+### Use a domain model, not COCO
+
+Running stock `yolo11n.pt` over 500 MOUSS fish frames produced 1,498
+detections: `airplane` (497), `person` (477), `skateboard` (272), `bird` (211).
+Confident, and entirely wrong. A COCO checkpoint has never seen a reef.
+
+NOAA publishes a detector beside the imagery, and `LIB_YOLO_MODEL` accepts a
+`gs://` URI, so pointing at it is one setting (weights are cached locally on
+first use):
+
+```bash
+export LIB_YOLO_MODEL="gs://nmfs_odp_pifsc/PIFSC/ESD/ARP/pifsc-ai-data-repository/models/yolo11-esa-icra-detector.pt"
+python -m library.cli annotate --annotator yolo --query '{"quality_min": 60}'
+```
+
+That model detects `ICRA` (*Isopora crateriformis*, ESA-listed) and found it in
+210 images across two collections at 0.50 mean confidence.
+
+![A photogrammetry frame with an ICRA detection, quality breakdown and visually similar frames](docs/images/shot-3-detail.png)
+
+*Detail view: OceanFrame quality broken into its four components, the source
+metrics, path-derived tags, and NOAA's ICRA detection drawn on the frame.*
+
 ```bash
 # 1. index a source (a big first crawl belongs in a terminal, not a browser tab)
 export LIB_SOURCE=gs://my-survey-bucket/2024
@@ -102,13 +154,21 @@ Every setting is a `LIB_`-prefixed environment variable; the ones worth knowing:
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `LIB_SOURCE` | *(unset)* | Bucket or directory offered by default, e.g. `gs://bucket/2024` |
-| `LIB_DATA_DIR` | `./library_data` | Catalog, vectors, thumbnails and exports |
+| `LIB_DATA_DIR` | `./library_data` | Catalog, vectors, thumbnails, previews and exports |
 | `LIB_EMBED_BACKEND` | `auto` | `clip`, `hash`, or `auto` (CLIP when importable) |
-| `LIB_PATH_TAG_PATTERN` | *(unset)* | Regex whose named groups become `key:value` tags |
-| `LIB_YOLO_MODEL` | `yolo11n.pt` | Any detect/segment/classify checkpoint |
-| `LIB_SAM3_MODEL` | `sam3.pt` | Path to the SAM 3 weights |
+| `LIB_GCS_ANONYMOUS` | `auto` | `auto` falls back to an anonymous client, so public buckets need no credentials |
+| `LIB_PATH_TAG_PATTERN` | *(unset)* | Default regex whose named groups become `key:value` tags |
+| `LIB_YOLO_MODEL` | `yolo11n.pt` | Any detect/segment/classify checkpoint — a local path or a `gs://` URI |
+| `LIB_SAM3_MODEL` | `sam3.pt` | Path or `gs://` URI for the SAM 3 weights |
+| `LIB_MODEL_DIR` | `./models` | Where `gs://` weights are cached |
 | `LIB_DUPE_DISTANCE` | `6` | pHash Hamming distance that counts as a duplicate |
+| `LIB_PREVIEW_MAX_EDGE` | `1600` | Longest edge of the cached detail-view preview |
+| `LIB_CRAWL_WORKERS` | `8` | Parallel fetches; the GCS connection pool is sized to match |
 | `LIB_SIGNED_URLS` | `0` | Serve full-resolution images as GCS signed URLs |
+
+Path rules are stored **per source**, because one bucket routinely holds
+collections with different conventions. `--tag-pattern` on `index` sets it and
+remembers it; `LIB_PATH_TAG_PATTERN` is only the fallback.
 
 `LIB_PATH_TAG_PATTERN` is what makes folder structure searchable. With
 
@@ -119,10 +179,30 @@ LIB_PATH_TAG_PATTERN='(?P<year>\d{4})/(?P<site>[^/]+)/(?P<transect>T\d+)'
 `2024/kaneohe/T03/img_0912.jpg` gains the tags `year:2024`, `site:kaneohe` and
 `transect:T03`, which are then facets, filters and dataset selectors.
 
+The same rule works on NOAA's real layout — this one is what the quickstart
+applies to the bleaching classifier:
+
+```
+(?P<split>train|val|test)/(?P<class>[A-Z_]+)/(?P<island>[A-Z]{3})-(?P<station>[A-Z0-9]+)_(?P<year>\d{4})
+```
+
+turning `test/CORAL_BL/MAI-B2483_2019_12_16130.PNG` into `split:test`,
+`class:CORAL_BL`, `island:MAI`, `station:B2483`, `year:2019`.
+
 ## Tests
 
 ```bash
 pip install pytest && python -m pytest
+```
+
+The default suite is offline and needs no GPU, network or model weights. A
+second suite runs against the live NOAA bucket and covers what synthetic
+fixtures cannot — anonymous access, uppercase extensions, prefixes containing
+spaces, 13 MB source frames, and incremental re-crawls driven by GCS
+generations:
+
+```bash
+OCEANFRAME_LIVE_TESTS=1 python -m pytest tests/test_noaa_live.py -v
 ```
 
 ## Dependency Reference
@@ -152,6 +232,7 @@ Optional, in [requirements-ml.txt](requirements-ml.txt):
 - `deploy/workstation_setup.sh`: Google Cloud Workstation setup for the image library.
 - `library/cli.py`: Batch index / embed / annotate / search / dataset commands.
 - `scripts/make_demo_library.py`: Generates a synthetic survey tree to try the library on.
+- `scripts/noaa_quickstart.sh`: Builds a real library from NOAA's public PIFSC bucket.
 
 ## Endpoints
 
@@ -170,7 +251,7 @@ Image library (`/api/library/…`):
 - `GET  /jobs/{job_id}/stream` for SSE job progress.
 - `POST /search`, `POST /facets`, `POST /folders`, `POST /duplicates` to query.
 - `POST /search-by-image` for reverse image search from an upload.
-- `GET  /asset/{id}`, `/thumb/{id}`, `/image/{id}` for one asset.
+- `GET  /asset/{id}`, `/thumb/{id}`, `/preview/{id}`, `/image/{id}` for one asset.
 - `POST /tags`, `POST /tags/remove` to curate.
 - `GET/POST /datasets`, `POST /datasets/{id}/export`, `GET /exports/{file}`.
 

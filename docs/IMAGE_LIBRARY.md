@@ -14,15 +14,16 @@ the library.
 
 | Goal | How it is met |
 | --- | --- |
-| Index a dense GCS bucket | Streaming blob listing, incremental by `generation`, resumable jobs |
+| Index a dense GCS bucket | Streaming blob listing, incremental by `generation`, resumable jobs, anonymous auth for public buckets |
 | Similarity search | CLIP image/text embeddings + cosine ranking over a memmapped matrix |
 | Folder structure is meaningful | `folder` is a first-class indexed column: tree browser, prefix scoping, facet counts, and path→tag rules |
-| Search with YOLO | Detections stored per asset; filter by class, confidence, and instance count |
+| Search with YOLO | Detections stored per asset; filter by class, confidence, and instance count. Models load from a path or a `gs://` URI |
 | Search with SAM 3 concepts | Text-prompted concept segmentation writes back concept tags + boxes |
 | Tagging | Manual tags, auto tags (model, path rules), tag facets |
 | Datasets | Save a query or a selection, assign splits, export YOLO / COCO / CSV / manifest |
 | Quality score | OceanFrame blur / brightness / contrast / colour-cast metrics → 0–100 composite |
 | Deploy anywhere | Pure-Python default path (no torch); Docker Compose; Google Cloud Workstations bootstrap |
+| Prove it on real data | `scripts/noaa_quickstart.sh` builds a 2,800-image catalog from NOAA's public PIFSC bucket; `tests/test_noaa_live.py` runs against it |
 
 ## 2. Non-goals
 
@@ -187,6 +188,7 @@ re-indexing: an unchanged blob is skipped without ever being downloaded.
 | Cloud Workstation | `deploy/workstation_setup.sh` — installs deps, wires ADC, systemd unit, and prints the tunnel command |
 | CLI / batch | `python -m library.cli index\|embed\|annotate\|search\|dataset` |
 | Try it with no bucket | `python scripts/make_demo_library.py /tmp/demo && LIB_SOURCE=/tmp/demo python launch.py` |
+| Try it on real NOAA data | `./scripts/noaa_quickstart.sh` (public bucket, no credentials needed) |
 
 Auth on GCP uses Application Default Credentials, so a workstation's attached
 service account works with no key material on disk. The bucket needs
@@ -195,7 +197,7 @@ service account works with no key material on disk. The bucket needs
 
 ## 6. Testing
 
-`python -m pytest` runs the suite in `tests/`. It builds a small folder tree of
+`python -m pytest` runs the offline suite in `tests/`. It builds a small folder tree of
 generated images (including a deliberate near-duplicate) in a temp directory and
 exercises the whole pipeline: incremental re-indexing, missing-object handling,
 folder scoping and facet counts, tag and detection filters, near-duplicate
@@ -203,7 +205,75 @@ collapsing, exact-vs-brute-force vector ranking, split leakage, every export
 format, and the HTTP surface. It needs no GPU, no network, and no model weights —
 which is the point of the hash backend.
 
-## 7. What is not covered by the tests
+`tests/test_noaa_live.py` runs against the live NOAA bucket, gated behind
+`OCEANFRAME_LIVE_TESTS=1`. Each of its cases exists because of a bug found by
+pointing the library at real data: anonymous access, uppercase `.PNG`/`.JPG`,
+a prefix containing a space, source dimensions on drafted 13 MB frames, preview
+bounds and caching, and the resumable meaning of `--limit`.
+
+### Cross-collection search
+
+![210 images carrying an ICRA detection, spanning two collections](images/shot-2-icra.png)
+
+*One class facet, two collections: `ICRA` detections from NOAA's own model span
+both the 6000×4000 photogrammetry frames and the 224px classifier crops, because
+detections are indexed against assets rather than against a dataset.*
+
+### Similarity
+
+![Bleached-coral crops ranked by visual similarity](images/shot-4-similar.png)
+
+*"Find similar" from a `CORAL_BL` crop, ranked by cosine over the filtered set.
+The badge on each tile is the similarity score; the green badge is the
+OceanFrame quality score.*
+
+### Sources and models
+
+![The index drawer showing three GCS sources and two cached models](images/shot-5-index.png)
+
+*Each source keeps its own path-tag rule and its own last-scanned time.
+Re-indexing skips objects whose GCS generation has not changed.*
+
+## 7. What real data changed
+
+The design above survived contact with `gs://nmfs_odp_pifsc` largely intact, but
+seven things only showed up once real imagery went through it. They are listed
+here because each one is invisible on synthetic fixtures:
+
+| Found | Fix |
+| --- | --- |
+| `storage.Client()` needs credentials; NOAA's buckets are public | Anonymous-client fallback (`LIB_GCS_ANONYMOUS=auto`) |
+| One global path-tag regex cannot serve three collections in one bucket | `tag_pattern` stored **per source** |
+| 6000×4000 frames decoded in 507 ms each | `Image.draft()` DCT-domain scaling → 214 ms, identical phash and score |
+| `draft()` mutates `.size`, so source dimensions were recorded post-scale | Read `.size` before drafting |
+| 16 crawl workers against a 10-connection urllib3 pool | Pool sized to `CRAWL_WORKERS`; 55 s → 36 s for 2,000 objects |
+| Detail view proxied the 13 MB original: 7 s per click | Cached ~1600px preview: 1.3 s cold, 0.2 s warm |
+| Detection boxes drawn with `vector-effect` at `stroke-width: 0.45` were hairlines, and the overlay was letterbox-misaligned on non-square frames | Positioned box elements with labels; wrapper shrink-wraps the rendered image |
+
+And one finding that is not a bug but changes how the tool should be used:
+
+> **A COCO checkpoint is worse than useless on reef imagery.** Stock
+> `yolo11n.pt` over 500 MOUSS fish frames produced 1,498 confident detections —
+> `airplane` ×497, `person` ×477, `skateboard` ×272 — and not one was right.
+> NOAA publishes `yolo11-esa-icra-detector.pt` in the same bucket, so
+> `LIB_YOLO_MODEL` accepts `gs://` URIs and caches the weights locally. That
+> model found `ICRA` in 210 images at 0.50 mean confidence.
+
+Quality scoring behaved sensibly across genuinely different gear, which is the
+main thing the composite had to prove:
+
+| Collection | Native size | Mean quality |
+| --- | --- | --- |
+| CRCP photogrammetry (DSLR, strobes) | 6000×4000 | 83.4 |
+| Coral bleaching crops | 224×224 | 66.8 |
+| MOUSS deep-water stereo camera | 968×728 | 55.0 |
+
+Every asset is measured at the same working resolution
+(`LIB_WORK_MAX_EDGE`), which is what makes that comparison meaningful — the
+blur metric is strongly resolution-dependent, so scoring at native size would
+have ranked the 24 MP camera top on sharpness alone regardless of content.
+
+## 8. What is not covered by the tests
 
 * **CLIP inference.** The code path is exercised only by its fallback. Verifying
   it needs the weights, which means network access to the model host.
@@ -211,5 +281,5 @@ which is the point of the hash backend.
   `ultralytics.models.sam.SAM3SemanticPredictor`, but the weights are
   access-gated on Hugging Face and cannot be fetched automatically, so the
   annotator reports itself unavailable until you supply `sam3.pt`.
-* **Live GCS.** The backend is unit-testable only against a real bucket; the
-  local backend covers the shared crawl/ingest logic.
+* **Authenticated GCS.** The anonymous path is covered live against NOAA's
+  public bucket; the ADC path needs credentials and a private bucket.

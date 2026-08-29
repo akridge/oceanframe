@@ -218,11 +218,12 @@ def _fts_query(raw: str) -> str:
 
 
 _SELECT = """
-SELECT a.*,
+SELECT a.*, s.label AS source_label,
        (SELECT GROUP_CONCAT(t.name, char(31)) FROM asset_tags at JOIN tags t ON t.id = at.tag_id
          WHERE at.asset_id = a.id) AS tags,
        (SELECT GROUP_CONCAT(DISTINCT d.label) FROM detections d WHERE d.asset_id = a.id) AS det_labels
   FROM assets a
+  JOIN sources s ON s.id = a.source_id
 """
 
 
@@ -458,6 +459,11 @@ def facets(raw: dict, top: int = 40) -> dict:
         f"WHERE d.asset_id IN ({scope}) AND d.conf >= ? GROUP BY d.label ORDER BY n DESC LIMIT ?",
         [*params, float(query.label_conf), top]
     ).fetchall()
+    source_rows = conn.execute(
+        f"SELECT a.source_id, s.label, s.root, COUNT(*) AS n FROM assets a "
+        f"JOIN sources s ON s.id = a.source_id WHERE {where} "
+        f"GROUP BY a.source_id ORDER BY n DESC", params
+    ).fetchall()
     ext_rows = conn.execute(
         f"SELECT a.ext, COUNT(*) AS n FROM assets a WHERE {where} GROUP BY a.ext ORDER BY n DESC", params
     ).fetchall()
@@ -471,6 +477,10 @@ def facets(raw: dict, top: int = 40) -> dict:
     ).fetchone()
 
     return {
+        "sources": [
+            {"id": r["source_id"], "label": r["label"] or r["root"], "root": r["root"], "count": r["n"]}
+            for r in source_rows
+        ],
         "tags":   [{"name": r["name"], "kind": r["kind"], "count": r["n"]} for r in tag_rows],
         "labels": [{"name": r["label"], "count": r["n"]} for r in label_rows],
         "ext":    [{"name": r["ext"], "count": r["n"]} for r in ext_rows],

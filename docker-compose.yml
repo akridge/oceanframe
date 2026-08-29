@@ -21,8 +21,15 @@ services:
       LIB_SOURCE: "${LIB_SOURCE:-}"
       # "auto" uses CLIP when installed and falls back to the hash descriptor.
       LIB_EMBED_BACKEND: "${LIB_EMBED_BACKEND:-auto}"
+      # A local path or a gs:// URI; gs:// weights are cached into LIB_MODEL_DIR.
+      # NOAA publishes a coral detector at
+      #   gs://nmfs_odp_pifsc/PIFSC/ESD/ARP/pifsc-ai-data-repository/models/yolo11-esa-icra-detector.pt
       LIB_YOLO_MODEL: "${LIB_YOLO_MODEL:-yolo11n.pt}"
       LIB_SAM3_MODEL: "${LIB_SAM3_MODEL:-sam3.pt}"
+      LIB_MODEL_DIR: /app/models
+      # auto = use ADC when present, fall back to an anonymous client so public
+      # buckets (NOAA's open data) work with no credentials at all.
+      LIB_GCS_ANONYMOUS: "${LIB_GCS_ANONYMOUS:-auto}"
       # Named groups become key:value tags, e.g.
       #   (?P<year>\d{4})/(?P<site>[^/]+)/(?P<transect>T\d+)
       LIB_PATH_TAG_PATTERN: "${LIB_PATH_TAG_PATTERN:-}"

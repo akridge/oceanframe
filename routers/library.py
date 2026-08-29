@@ -16,7 +16,7 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 from library import datasets as datasets_mod
-from library import db, indexer, jobs, search, settings, tags as tags_mod
+from library import db, indexer, jobs, modelcache, search, settings, tags as tags_mod
 from library.annotate import annotator_statuses
 from library.embed import embedder_status, get_embedder
 from library.models import asset_to_dict
@@ -31,6 +31,9 @@ router = APIRouter(prefix="/library", tags=["library"])
 class SourceIn(BaseModel):
     root:  str = Field(..., description="gs://bucket/prefix or a local directory")
     label: str = ""
+    tag_pattern: str | None = Field(
+        None, description="Regex whose named groups become key:value tags for this source"
+    )
 
 
 class IndexIn(BaseModel):
@@ -39,6 +42,7 @@ class IndexIn(BaseModel):
     limit: int = 0
     label: str = ""
     prune: bool = True
+    tag_pattern: str | None = None
 
 
 class EmbedIn(BaseModel):
@@ -114,6 +118,9 @@ async def status() -> dict:
             "path_tag_pattern": settings.PATH_TAG_PATTERN,
             "signed_urls":     settings.USE_SIGNED_URLS,
             "data_dir":        str(settings.DATA_DIR),
+            "yolo_model":      settings.YOLO_MODEL,
+            "sam3_model":      settings.SAM3_MODEL,
+            "models":          modelcache.cached_models(),
         },
     }
 
@@ -129,7 +136,7 @@ async def get_sources() -> dict:
 @router.post("/sources")
 async def add_source(body: SourceIn) -> dict:
     db.init_db()
-    source_id, root = indexer.ensure_source(body.root, body.label)
+    source_id, root = indexer.ensure_source(body.root, body.label, body.tag_pattern)
     return {"id": source_id, "root": root}
 
 
@@ -154,7 +161,8 @@ async def start_index(body: IndexIn) -> dict:
         "index",
         {"root": root, "force": body.force, "limit": body.limit},
         lambda j: indexer.index_source(
-            j, root, force=body.force, limit=body.limit, label=body.label, prune=body.prune
+            j, root, force=body.force, limit=body.limit, label=body.label,
+            prune=body.prune, tag_pattern=body.tag_pattern,
         ),
     )
     return job.to_dict()
@@ -333,6 +341,19 @@ async def get_thumb(asset_id: int):
     if not path.exists():
         raise HTTPException(404, "Thumbnail file is missing — re-run indexing")
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@router.get("/preview/{asset_id}")
+async def get_preview(asset_id: int):
+    """Mid-size cached JPEG for the detail viewer."""
+    try:
+        path = indexer.ensure_preview(asset_id)
+    except KeyError:
+        raise HTTPException(404, f"No asset {asset_id}") from None
+    except Exception as exc:
+        raise HTTPException(502, f"Could not build a preview: {exc}") from exc
+    return FileResponse(path, media_type="image/jpeg",
+                        headers={"Cache-Control": "private, max-age=86400"})
 
 
 @router.get("/image/{asset_id}")

@@ -92,10 +92,13 @@ def asset_to_dict(row: sqlite3.Row, score: float | None = None) -> dict:
         "quality":    round(row["quality"], 1),
         "status":     row["status"],
         "thumb":      f"/api/library/thumb/{row['id']}",
+        "preview":    f"/api/library/preview/{row['id']}",
         "full":       f"/api/library/image/{row['id']}",
         "has_embed":  row["embed_row"] >= 0,
     }
     keys = row.keys()
+    if "source_label" in keys:
+        out["source"] = row["source_label"]
     if "tags" in keys:
         out["tags"] = [t for t in (row["tags"] or "").split("\x1f") if t]
     if "det_labels" in keys:

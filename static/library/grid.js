@@ -51,9 +51,14 @@ export function createGrid({ onOpen }) {
         else onOpen(item.id);
       },
     }, [
-      el('img', {
-        class: 'tile-img', src: item.thumb, alt: item.name, loading: 'lazy', decoding: 'async',
-      }),
+      el('div', { class: 'tile-media' }, [
+        el('img', {
+          class: 'tile-img', src: item.thumb, alt: item.name, loading: 'lazy', decoding: 'async',
+        }),
+        // Which collection this came from only matters once a library holds
+        // more than one, so it stays out of the way until hover.
+        item.source ? el('div', { class: 'tile-source', text: item.source, title: item.source }) : null,
+      ]),
       el('span', { class: `quality-badge ${band(item.quality)}`, text: Math.round(item.quality), title: 'OceanFrame quality score' }),
       item.score !== undefined ? el('span', { class: 'score-badge', text: item.score.toFixed(2), title: 'Similarity' }) : null,
       check,
@@ -76,6 +81,14 @@ export function createGrid({ onOpen }) {
     $('page-label').textContent = `Page ${state.query.page + 1} of ${pages}`;
     $('page-prev').disabled = state.query.page === 0;
     $('page-next').disabled = state.query.page + 1 >= pages;
+  }
+
+  // Shadow under the sticky toolbar only once the grid has scrolled beneath it.
+  const toolbar = document.querySelector('.toolbar');
+  if (toolbar) {
+    window.addEventListener('scroll', () => {
+      toolbar.classList.toggle('stuck', window.scrollY > 12);
+    }, { passive: true });
   }
 
   $('select-page').addEventListener('click', () => selectMany(state.results.items.map(i => i.id)));

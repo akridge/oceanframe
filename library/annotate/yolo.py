@@ -14,7 +14,7 @@ import threading
 
 from PIL import Image
 
-from library import settings
+from library import modelcache, settings
 from library.annotate.base import Annotator, xyxy_to_norm
 from library.models import AnnotatorStatus, Detection
 
@@ -38,7 +38,7 @@ class YoloAnnotator(Annotator):
                 try:
                     from ultralytics import YOLO  # noqa: PLC0415
 
-                    self._model = YOLO(self.model_ref)
+                    self._model = YOLO(modelcache.resolve(self.model_ref))
                 except ImportError:
                     self._error = (
                         "ultralytics is not installed. Install it with: pip install ultralytics"

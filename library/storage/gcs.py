@@ -8,6 +8,12 @@ Cloud Workstation / GCE VM works with no key file:
     (nothing)                                   # workstation with a SA attached
 
 The bucket only needs ``roles/storage.objectViewer``.
+
+Public buckets need no credentials at all.  NOAA's open-data buckets — such as
+``gs://nmfs_odp_pifsc`` — are world-readable, and a scientist trying the library
+on one should not have to create a GCP project first, so when ADC is absent the
+backend falls back to an anonymous client.  ``LIB_GCS_ANONYMOUS`` forces either
+behaviour (``auto`` | ``yes`` | ``no``).
 """
 from __future__ import annotations
 
@@ -15,12 +21,34 @@ import threading
 from typing import Iterator
 from urllib.parse import urlparse
 
+from library import settings
 from library.models import ObjectRef
 from library.storage.base import StorageBackend
 
 
 class GCSUnavailable(RuntimeError):
     pass
+
+
+def _size_connection_pool(client) -> None:
+    """
+    Widen the HTTP connection pool to match the crawl fan-out.
+
+    google-cloud-storage inherits urllib3's default of 10 pooled connections.
+    Crawling with more workers than that makes every extra worker open a socket,
+    use it once, and have it discarded ("Connection pool is full"), which shows
+    up as a stream of warnings and a TLS handshake per object.
+    """
+    size = max(settings.CRAWL_WORKERS, settings.INDEX_BATCH, 10) + 4
+    try:
+        import requests.adapters  # noqa: PLC0415
+
+        adapter = requests.adapters.HTTPAdapter(pool_connections=size, pool_maxsize=size)
+        client._http.mount("https://", adapter)
+    except Exception:
+        # Private attribute; if the client internals move, the default pool
+        # still works — it is a throughput hint, not a correctness requirement.
+        pass
 
 
 def parse_gs_uri(uri: str) -> tuple[str, str]:
@@ -39,6 +67,7 @@ class GCSBackend(StorageBackend):
         super().__init__(f"gs://{bucket}" + (f"/{prefix}" if prefix else ""))
         self.bucket_name = bucket
         self.prefix = prefix
+        self.anonymous = False
         self._client = None
         self._bucket = None
         self._lock = threading.Lock()
@@ -48,19 +77,44 @@ class GCSBackend(StorageBackend):
     def _ensure_client(self):
         # google-cloud-storage clients are thread-safe once built, but building
         # one twice concurrently wastes a metadata-server round trip.
-        if self._client is None:
-            with self._lock:
-                if self._client is None:
-                    try:
-                        from google.cloud import storage  # noqa: PLC0415
-                    except ImportError as exc:
-                        raise GCSUnavailable(
-                            "google-cloud-storage is not installed. "
-                            "Install it with: pip install google-cloud-storage"
-                        ) from exc
-                    self._client = storage.Client()
-                    self._bucket = self._client.bucket(self.bucket_name)
-        return self._client
+        if self._client is not None:
+            return self._client
+        with self._lock:
+            if self._client is not None:
+                return self._client
+            try:
+                from google.cloud import storage  # noqa: PLC0415
+            except ImportError as exc:
+                raise GCSUnavailable(
+                    "google-cloud-storage is not installed. "
+                    "Install it with: pip install google-cloud-storage"
+                ) from exc
+
+            self._client, self._bucket = self._build_client(storage)
+            _size_connection_pool(self._client)
+            return self._client
+
+    def _build_client(self, storage):
+        """Credentialed client when ADC is available, anonymous otherwise."""
+        mode = settings.GCS_ANONYMOUS.strip().lower()
+
+        if mode != "yes":
+            try:
+                client = storage.Client()
+                self.anonymous = False
+                return client, client.bucket(self.bucket_name)
+            except Exception as exc:
+                if mode == "no":
+                    raise GCSUnavailable(
+                        "No Google credentials found. Run "
+                        "`gcloud auth application-default login`, attach a service "
+                        "account to the workstation, or set LIB_GCS_ANONYMOUS=yes "
+                        f"for a public bucket. ({exc})"
+                    ) from exc
+
+        client = storage.Client.create_anonymous_client()
+        self.anonymous = True
+        return client, client.bucket(self.bucket_name)
 
     def exists(self) -> bool:
         try:
@@ -117,6 +171,10 @@ class GCSBackend(StorageBackend):
             # Signing needs a private key or the IAM Credentials API; when it is
             # not available the caller falls back to proxying the bytes.
             return None
+
+    def describe(self) -> str:
+        self._ensure_client()
+        return f"{self.root} ({'anonymous' if self.anonymous else 'authenticated'})"
 
     # ── writes (dataset export only) ──────────────────────────────────────────
 

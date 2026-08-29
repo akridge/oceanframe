@@ -90,7 +90,7 @@ $('annotate-run').addEventListener('click', () => {
     notice('SAM 3 needs concepts to look for — e.g. "fish, bleached coral".');
     return;
   }
-  api.annotate({ annotator, asset_ids: selectedIds(), prompts })
+  api.annotate({ annotator, asset_ids: selectedIds(), prompts, model: $('annotate-weights').value.trim() })
     .then(job => watchJob(job, { onDone: () => { refreshStatus(); emit('query'); } }))
     .catch(error => notice(error.message, 'sticky'));
 });
@@ -154,6 +154,27 @@ $('notice-close').addEventListener('click', () => $('notice-bar').classList.add(
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────
 
+/**
+ * Offer the models already on disk plus the configured defaults.
+ *
+ * A COCO checkpoint is worse than useless on reef imagery, so making a domain
+ * model one keystroke away matters more than it looks.
+ */
+function renderModelSuggestions(status) {
+  const list = $('model-suggestions');
+  while (list.firstChild) list.removeChild(list.firstChild);
+  const refs = new Set([
+    ...(status.config.models || []).map(m => m.path),
+    status.config.yolo_model,
+    status.config.sam3_model,
+  ].filter(Boolean));
+  for (const ref of refs) {
+    const option = document.createElement('option');
+    option.value = ref;
+    list.append(option);
+  }
+}
+
 async function refreshStatus() {
   try {
     const status = await api.status();
@@ -163,6 +184,7 @@ async function refreshStatus() {
       $('source-root').value = status.config.default_source;
     }
     $('annotate-prompts').placeholder = (status.config.sam3_prompts || []).join(', ') || 'fish, coral';
+    renderModelSuggestions(status);
     if (!status.stats.assets) {
       notice('Nothing indexed yet — open “Index” and point the library at a bucket or folder.', 'sticky');
       admin.open();

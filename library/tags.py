@@ -118,6 +118,7 @@ def path_tags(relative_key: str, pattern: str | None = None) -> list[str]:
     ``2024/kaneohe/T03/img_0912.jpg`` yields
     ``['year:2024', 'site:kaneohe', 'transect:T03']``.
     """
+    # None = fall back to the global default; "" = this source has no rule.
     compiled = _compiled_pattern(settings.PATH_TAG_PATTERN if pattern is None else pattern)
     if compiled is None:
         return []

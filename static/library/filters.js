@@ -95,6 +95,8 @@ export function createFilters() {
     }
     state.facets = data;
 
+    renderSources(data.sources || []);
+
     const tagBox = clear($('facet-tags'));
     if (!data.tags.length) tagBox.append(el('span', { class: 'muted-row', text: 'No tags yet' }));
     for (const tag of data.tags) {
@@ -127,6 +129,34 @@ export function createFilters() {
     }
   }
 
+  function renderSources(sources) {
+    // Hide the whole card for a single-collection library — it would be a
+    // control with exactly one option.
+    const card = $('collections-card');
+    const box = clear($('source-filter'));
+    const known = state.status ? state.status.sources : [];
+    if (known.length < 2) {
+      card.classList.add('hidden');
+      return;
+    }
+    card.classList.remove('hidden');
+
+    // Show every configured collection, including ones the current query
+    // filters down to zero, so you can always switch back to them.
+    const counts = new Map(sources.map(s => [s.id, s.count]));
+    for (const source of known) {
+      const on = state.query.source_id === source.id;
+      box.append(el('button', {
+        type: 'button', class: `source-btn${on ? ' on' : ''}`, title: source.root,
+        onclick: () => setQuery({ source_id: on ? null : source.id, folder: '', folder_exact: false }),
+      }, [
+        el('span', { class: 'kind', text: source.kind }),
+        el('span', { class: 'label', text: source.label || source.root }),
+        el('span', { class: 'count', text: count(counts.get(source.id) || 0) }),
+      ]));
+    }
+  }
+
   function rangeFor(key) {
     return {
       poor:      { quality_min: null, quality_max: 25 },
@@ -145,6 +175,10 @@ export function createFilters() {
 
     if (q.similar_to) chips.push(['Similar to #' + q.similar_to, () => setQuery({ similar_to: null })]);
     if (q.vector) chips.push(['Similar to uploaded image', () => setQuery({ vector: null })]);
+    if (q.source_id) {
+      const source = (state.status?.sources || []).find(s => s.id === q.source_id);
+      chips.push([`collection: ${source ? source.label || source.root : q.source_id}`, () => setQuery({ source_id: null })]);
+    }
     if (q.folder) chips.push([`folder: ${q.folder}${q.folder_exact ? ' (only)' : '/…'}`, () => setQuery({ folder: '', folder_exact: false })]);
     for (const tag of q.tags) chips.push([tag, () => toggleInList('tags', tag)]);
     for (const label of q.labels) chips.push([`class: ${label}`, () => toggleInList('labels', label)]);
@@ -184,6 +218,7 @@ export function createFilters() {
     $('quality-min-val').textContent = '0';
     setQuery({ quality_min: null, quality_max: null });
   });
+  $('sources-reset').addEventListener('click', () => setQuery({ source_id: null }));
   $('tags-reset').addEventListener('click', () => setQuery({ tags: [], exclude_tags: [] }));
   $('labels-reset').addEventListener('click', () => setQuery({ labels: [] }));
   $('folder-reset').addEventListener('click', () => {

@@ -45,11 +45,12 @@ DB_PATH    = DATA_DIR / "catalog.sqlite"
 VEC_PATH   = DATA_DIR / "vectors.f32"
 VEC_META   = DATA_DIR / "vectors.json"
 THUMB_DIR  = DATA_DIR / "thumbs"
+PREVIEW_DIR = DATA_DIR / "previews"
 EXPORT_DIR = DATA_DIR / "exports"
 
 
 def ensure_dirs() -> None:
-    for path in (DATA_DIR, THUMB_DIR, EXPORT_DIR):
+    for path in (DATA_DIR, THUMB_DIR, PREVIEW_DIR, EXPORT_DIR):
         path.mkdir(parents=True, exist_ok=True)
 
 
@@ -59,9 +60,16 @@ def ensure_dirs() -> None:
 # local directory.  Blank means "ask the user".
 DEFAULT_SOURCE = _env("LIB_SOURCE", "")
 
-IMAGE_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp", ".JPG", ".JPEG", ".PNG",
-}
+# How to authenticate to GCS:
+#   auto — Application Default Credentials, falling back to an anonymous client
+#          so public buckets (NOAA's open-data buckets, for one) just work
+#   yes  — always anonymous
+#   no   — require ADC and fail loudly when it is missing
+GCS_ANONYMOUS = _env("LIB_GCS_ANONYMOUS", "auto")
+
+# Compared case-insensitively by the storage backends, which matters: NOAA's
+# camera output is ".JPG" and ".PNG" while its ML datasets are ".jpg".
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp"}
 
 # Crawl limits.  0 = unlimited.
 MAX_ASSETS      = _env_int("LIB_MAX_ASSETS", 0)
@@ -72,6 +80,13 @@ INDEX_BATCH     = _env_int("LIB_INDEX_BATCH", 32)
 
 THUMB_WIDTH   = _env_int("LIB_THUMB_WIDTH", 320)
 THUMB_QUALITY = _env_int("LIB_THUMB_QUALITY", 78)
+
+# Detail-view preview.  Serving the original there means pulling a 13 MB
+# 6000x4000 photogrammetry frame through the app on every click — measured at
+# 7s — so the viewer gets a cached downscale instead and the original stays one
+# click away behind "Open full size".
+PREVIEW_MAX_EDGE = _env_int("LIB_PREVIEW_MAX_EDGE", 1600)
+PREVIEW_QUALITY  = _env_int("LIB_PREVIEW_QUALITY", 82)
 # Longest edge the pipeline decodes to before metrics/embedding.  Keeps memory
 # bounded on 8000px drone frames.
 WORK_MAX_EDGE = _env_int("LIB_WORK_MAX_EDGE", 1024)
@@ -94,6 +109,12 @@ ANN_MIN_ROWS   = _env_int("LIB_ANN_MIN_ROWS", 200_000)
 
 # ── Models ────────────────────────────────────────────────────────────────────
 
+# Where gs:// model weights are cached, and where you drop your own .pt files.
+MODEL_DIR   = Path(_env("LIB_MODEL_DIR", str(BASE_DIR / "models")))
+
+# A bare name lets Ultralytics fetch it; a gs:// URI is downloaded into
+# MODEL_DIR.  The COCO default is a placeholder — see library/modelcache.py for
+# why a domain checkpoint matters on underwater imagery.
 YOLO_MODEL  = _env("LIB_YOLO_MODEL", "yolo11n.pt")
 YOLO_CONF   = _env_float("LIB_YOLO_CONF", 0.25)
 YOLO_IMGSZ  = _env_int("LIB_YOLO_IMGSZ", 640)

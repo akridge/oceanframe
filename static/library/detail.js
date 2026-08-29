@@ -25,7 +25,9 @@ export function createDetail() {
 
     $('detail-name').textContent = asset.name;
     $('detail-uri').textContent = asset.uri;
-    $('detail-img').src = asset.full;
+    // The preview, not the original: a 13 MB photogrammetry frame took 7s to
+    // paint here. "Open full size" still serves the untouched source object.
+    $('detail-img').src = asset.preview || asset.full;
     $('detail-img').alt = asset.name;
     $('detail-open').href = asset.full;
 
@@ -98,6 +100,7 @@ export function createDetail() {
   function renderDetections(asset) {
     const list = clear($('detail-dets'));
     const overlay = $('detail-overlay');
+    const boxes = clear($('detail-boxes'));
     clear(overlay);
 
     if (!asset.detections.length) {
@@ -106,32 +109,52 @@ export function createDetail() {
     }
 
     const colours = new Map();
-    asset.detections.forEach((det, i) => {
+    for (const det of asset.detections) {
       if (!colours.has(det.label)) colours.set(det.label, PALETTE[colours.size % PALETTE.length]);
       const colour = colours.get(det.label);
 
-      // Boxes are normalised cx,cy,w,h; the overlay viewBox is 0-100 in both
-      // axes with preserveAspectRatio="none", so percentages map straight over.
+      // Boxes are normalised cx, cy, w, h.  They are drawn as positioned
+      // elements rather than SVG shapes because the overlay is stretched to a
+      // non-square box: an SVG stroke would come out thicker on one axis, and
+      // a text label would come out visibly distorted.
       const [cx, cy, w, h] = det.box;
-      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      rect.setAttribute('x', String((cx - w / 2) * 100));
-      rect.setAttribute('y', String((cy - h / 2) * 100));
-      rect.setAttribute('width', String(w * 100));
-      rect.setAttribute('height', String(h * 100));
-      rect.setAttribute('fill', 'none');
-      rect.setAttribute('stroke', colour);
-      rect.setAttribute('stroke-width', '0.45');
-      rect.setAttribute('vector-effect', 'non-scaling-stroke');
-      overlay.append(rect);
+      const box = el('div', {
+        class: 'det-box',
+        style: `left:${(cx - w / 2) * 100}%;top:${(cy - h / 2) * 100}%;` +
+               `width:${w * 100}%;height:${h * 100}%;` +
+               `border-color:${colour};background:${colour}1f`,
+      }, [
+        el('span', { class: 'det-box-tag', style: `background:${colour}`,
+                     text: `${det.label} ${det.conf.toFixed(2)}` }),
+      ]);
+      boxes.append(box);
+
+      if (det.mask) drawMask(overlay, det.mask, colour);
 
       list.append(el('div', { class: 'det-row' }, [
         el('span', {}, [
-          el('span', { style: `display:inline-block;width:8px;height:8px;border-radius:2px;background:${colour};margin-right:6px` }),
+          el('span', { class: 'det-swatch', style: `background:${colour}` }),
           det.label,
         ]),
         el('span', { class: 'conf', text: det.conf.toFixed(2) }),
       ]));
-    });
+    }
+  }
+
+  /** Segmentation polygons are normalised too; fill only, so no stroke to skew. */
+  function drawMask(overlay, polygons, colour) {
+    for (const polygon of polygons) {
+      if (!polygon || polygon.length < 6) continue;
+      const points = [];
+      for (let i = 0; i < polygon.length - 1; i += 2) {
+        points.push(`${polygon[i] * 100},${polygon[i + 1] * 100}`);
+      }
+      const shape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      shape.setAttribute('points', points.join(' '));
+      shape.setAttribute('fill', colour);
+      shape.setAttribute('fill-opacity', '0.28');
+      overlay.append(shape);
+    }
   }
 
   function renderSimilar(asset) {

@@ -7,6 +7,8 @@ belongs in a terminal (or a Cloud Run job / cron), not in a browser tab:
 
     python -m library.cli index gs://my-survey-bucket/2024
     python -m library.cli index /data/surveys --force
+    python -m library.cli index "gs://nmfs_odp_pifsc/PIFSC/ESD/ARP/..." \
+        --tag-pattern '(?P<split>train|val|test)/(?P<class>[A-Z_]+)' 
     python -m library.cli embed --rebuild
     python -m library.cli annotate --annotator yolo --query '{"quality_min": 50}'
     python -m library.cli annotate --annotator sam3 --prompts "fish,bleached coral"
@@ -79,7 +81,8 @@ def cmd_index(args) -> None:
         raise SystemExit("Give a source root, or set LIB_SOURCE.")
     result = _run("index", {"root": root},
                   lambda job: indexer.index_source(job, root, force=args.force, limit=args.limit,
-                                                   label=args.label, prune=not args.no_prune))
+                                                   label=args.label, prune=not args.no_prune,
+                                                   tag_pattern=args.tag_pattern))
     print(json.dumps(result, indent=2))
 
 
@@ -199,9 +202,14 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("index", help="Crawl a source into the catalog")
     p.add_argument("root", nargs="?", default="", help="gs://bucket/prefix or a local directory")
     p.add_argument("--force", action="store_true", help="Re-read objects even if unchanged")
-    p.add_argument("--limit", type=int, default=0, help="Stop after N new objects")
+    p.add_argument("--limit", type=int, default=0,
+                   help="Stop after N *new* objects. Resumable: run it again to take the next N, "
+                        "which is how you walk a bucket too large for one sitting.")
     p.add_argument("--label", default="", help="Friendly name for the source")
     p.add_argument("--no-prune", action="store_true", help="Do not flag vanished objects as missing")
+    p.add_argument("--tag-pattern", default=None,
+                   help="Regex whose named groups become key:value tags, remembered for this source. "
+                        r"e.g. '(?P<split>train|val|test)/(?P<class>[A-Z_]+)'")
     p.set_defaults(func=cmd_index)
 
     p = sub.add_parser("embed", help="Compute missing vectors (or rebuild them all)")

@@ -23,6 +23,16 @@
 .lib-rail { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 16px; }
 .lib-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
+/* A real catalog is thousands of rows deep, so the query controls have to stay
+   reachable without scrolling back to the top. */
+.search-bar { position: sticky; top: 0; z-index: 20; }
+.toolbar {
+  position: sticky; top: 84px; z-index: 19;
+  background: var(--bg); padding: 6px 2px; margin: -6px -2px;
+  border-bottom: 1px solid transparent;
+}
+.toolbar.stuck { border-bottom-color: var(--border); }
+
 .card-header.compact { padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; }
 .card-header.compact .card-title { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
 
@@ -78,6 +88,14 @@
 /* ── Facets ────────────────────────────────────────────────────────────── */
 
 .facet-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 220px; overflow-y: auto; }
+
+.facet-list::-webkit-scrollbar, .folder-tree::-webkit-scrollbar { width: 8px; }
+.facet-list::-webkit-scrollbar-thumb, .folder-tree::-webkit-scrollbar-thumb {
+  background: var(--border); border-radius: 4px;
+}
+.facet-list::-webkit-scrollbar-thumb:hover, .folder-tree::-webkit-scrollbar-thumb:hover {
+  background: var(--text-light);
+}
 .facet {
   display: inline-flex;
   align-items: center;
@@ -112,6 +130,29 @@
 .band.fair b      { color: var(--warning); }
 .band.good b      { color: var(--primary); }
 .band.excellent b { color: var(--success); }
+
+/* ── Collections ───────────────────────────────────────────────────────── */
+
+.source-filter { display: flex; flex-direction: column; gap: 4px; }
+.source-btn {
+  display: flex; align-items: flex-start; gap: 8px; width: 100%;
+  padding: 6px 9px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); font: inherit; font-size: 12px; cursor: pointer;
+  color: var(--text); text-align: left;
+}
+.source-btn:hover { border-color: var(--primary); }
+.source-btn.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+/* Collection names are descriptive ("ESD coral bleaching classifier v1"), so
+   wrap rather than truncate — the tail is what tells two of them apart. */
+.source-btn .label { flex: 1; min-width: 0; line-height: 1.35; }
+.source-btn .count { font-family: var(--font-mono); font-size: 11px; opacity: .8; }
+.source-btn .kind {
+  flex: 0 0 auto; margin-top: 1px;
+  font-size: 9px; letter-spacing: .06em; text-transform: uppercase;
+  padding: 1px 5px; border-radius: 3px; background: var(--primary-light); color: var(--primary-dark);
+}
+.source-btn .count { flex: 0 0 auto; margin-top: 1px; }
+.source-btn.on .kind { background: rgba(255,255,255,.22); color: #fff; }
 
 /* ── Search bar ────────────────────────────────────────────────────────── */
 
@@ -162,14 +203,31 @@
 
 .tile-img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--surface-2); }
 .tile-body { padding: 7px 9px 9px; }
+/* NOAA filenames (HOW-1099_2023_A_06_2145.PNG) carry their identity in the
+   trailing digits, so a single truncated line hides exactly the part that
+   distinguishes two tiles. Wrap to two lines instead. */
 .tile-name {
-  font-size: 12px; font-weight: 500; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12px; font-weight: 500; line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden;
+  word-break: break-all;
 }
+/* On a survey bucket the folder is the label — train/CORAL_BL, not a path
+   detail — so it gets colour and weight rather than being greyed out. */
 .tile-folder {
-  font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; color: var(--primary-dark); font-family: var(--font-mono);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px;
 }
+
+.tile-source {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  padding: 3px 8px; font-size: 10px; letter-spacing: .02em;
+  color: #e2e8f0; background: linear-gradient(transparent, rgba(15,23,42,.82) 55%);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  opacity: 0; transition: opacity .12s;
+}
+.tile-media { position: relative; line-height: 0; }
+.tile:hover .tile-source { opacity: 1; }
 .tile-labels { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; }
 .tile-label {
   font-size: 10px; padding: 1px 5px; border-radius: 3px;
@@ -181,6 +239,9 @@
   padding: 2px 7px; border-radius: 999px;
   font-family: var(--font-mono); font-size: 11px; font-weight: 700;
   color: #fff; background: rgba(15,23,42,.75); backdrop-filter: blur(2px);
+  /* Underwater imagery spans near-white bleached coral to near-black water;
+     a hairline ring keeps the badge readable over both. */
+  box-shadow: 0 0 0 1px rgba(255,255,255,.35);
 }
 .quality-badge.poor      { background: rgba(220,38,38,.88); }
 .quality-badge.fair      { background: rgba(217,119,6,.88); }
@@ -195,11 +256,14 @@
 }
 
 .tile-check {
-  position: absolute; bottom: 42px; left: 6px;
+  position: absolute; top: 6px; left: 6px;
   width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer;
   opacity: 0; transition: opacity .12s;
 }
 .tile:hover .tile-check, .tile.selected .tile-check { opacity: 1; }
+/* The score badge and the checkbox both want the top-left corner; shift the
+   badge across when a similarity score is present. */
+.tile .score-badge { left: 32px; }
 
 .empty-state { padding: 48px 20px; text-align: center; color: var(--text-muted); }
 .pager { display: flex; justify-content: center; align-items: center; gap: 14px; padding: 6px 0 12px; }
@@ -219,6 +283,7 @@
   border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
 }
 .tag-input.grow { flex: 1; width: auto; }
+.tag-input.wide { width: 230px; }
 .tag-input:focus { outline: none; border-color: var(--border-focus); }
 
 /* ── Modals ────────────────────────────────────────────────────────────── */
@@ -239,10 +304,49 @@
 .detail-body { display: grid; grid-template-columns: minmax(0, 1fr) 330px; }
 @media (max-width: 900px) { .detail-body { grid-template-columns: 1fr; } }
 
-.detail-stage { padding: 22px; background: #0f172a; border-radius: var(--radius-lg) 0 0 var(--radius-lg); }
-.detail-canvas-wrap { position: relative; line-height: 0; }
-.detail-canvas-wrap img { width: 100%; max-height: 62vh; object-fit: contain; border-radius: var(--radius-sm); }
+.detail-stage {
+  padding: 22px; background: #0f172a;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  display: flex; flex-direction: column; align-items: center;
+}
+
+/*
+  The wrapper must shrink-wrap the *rendered* image, not the column.
+
+  The overlay is positioned inset:0 over this box and draws normalised
+  coordinates, so any letterboxing between the box and the image shifts every
+  detection.  A 6000x4000 frame in a 4:3 column made that obvious; a square
+  test image had hidden it entirely.  inline-block + intrinsic sizing means the
+  box is exactly the image.
+*/
+.detail-canvas-wrap {
+  position: relative; display: inline-block; line-height: 0; max-width: 100%;
+}
+.detail-canvas-wrap img {
+  display: block; width: auto; height: auto;
+  max-width: 100%; max-height: 62vh; border-radius: var(--radius-sm);
+}
 .detail-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.detail-boxes { position: absolute; inset: 0; pointer-events: none; }
+
+.det-box {
+  position: absolute;
+  border: 2px solid currentColor;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.35);
+}
+.det-box-tag {
+  position: absolute; top: 0; left: 0; transform: translateY(-100%);
+  padding: 1px 6px; border-radius: 3px 3px 0 0;
+  font-size: 10px; font-weight: 600; line-height: 1.5; color: #0f172a;
+  white-space: nowrap;
+}
+.det-swatch {
+  display: inline-block; width: 8px; height: 8px;
+  border-radius: 2px; margin-right: 6px;
+}
+
+.detail-strip { align-self: stretch; }
 
 .detail-strip { margin-top: 16px; }
 .similar-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }

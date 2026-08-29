@@ -11,7 +11,7 @@ const listeners = new Set();
 export const state = {
   query: {
     text: '', mode: 'auto', keywords: '', similar_to: null, vector: null,
-    folder: '', tags: [], exclude_tags: [], labels: [], label_conf: 0.25,
+    folder: '', source_id: null, tags: [], exclude_tags: [], labels: [], label_conf: 0.25,
     quality_min: null, dedupe: false, untagged: false, unannotated: false,
     sort: 'quality', page: 0, page_size: 120, status: 'ok',
   },
