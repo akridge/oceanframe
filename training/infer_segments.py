@@ -20,7 +20,7 @@ Two ways to turn a segment into classifier inputs (--mode):
           where one "coral" segment can be a whole colony.
 
 Example:
-    python infer_segments.py --checkpoint runs/dinov2b/best.pt \
+    python infer_segments.py --checkpoint runs/dinov3b/best.pt \
         --image survey_0001.jpg --masks-npz survey_0001_masks.npz \
         --mode points --csv survey_0001_classes.csv
 """

@@ -12,9 +12,9 @@ YOLO's classification mode works, but it's not the right tool for this job:
 - **Patch classification is pure image classification.** YOLO's value is its
   detection head and real-time pipeline; in `-cls` mode you're just using its
   (ImageNet-pretrained, relatively small) backbone with fewer training knobs.
-- **DINOv2 ViTs transfer much better to benthic texture.** Tier-1 classes
+- **DINO-family ViTs transfer much better to benthic texture.** Tier-1 classes
   (CCA vs. turf vs. macroalgae vs. coral) are fine-grained *texture* problems.
-  Self-supervised DINOv2 features consistently beat supervised-ImageNet
+  Self-supervised DINOv2/DINOv3 features consistently beat supervised-ImageNet
   backbones on CoralNet-style benthic patch benchmarks, especially for rare
   classes and cross-region generalization.
 - **Imbalance handling matters more than architecture.** Benthic cover data is
@@ -27,14 +27,19 @@ YOLO's classification mode works, but it's not the right tool for this job:
   cropped regions. A ViT with square-crop + context padding matches the
   training patch distribution.
 
-Default backbone: `vit_base_patch14_reg4_dinov2.lvd142m` (DINOv2 ViT-B with
-registers) at 224 px. Alternatives via `--model`:
+Default backbone: `vit_base_patch16_dinov3.lvd1689m` (DINOv3 ViT-B) at 224 px.
+Alternatives via `--model`:
 
 | Model | When |
 |---|---|
-| `vit_base_patch14_reg4_dinov2.lvd142m` | Default — best quality, ~16 GB VRAM at bs 64 |
-| `vit_small_patch14_reg4_dinov2.lvd142m` | Smaller GPU / faster iteration |
+| `vit_base_patch16_dinov3.lvd1689m` | Default — best quality, ~16 GB VRAM at bs 64. Gated weights (HF login) |
+| `vit_small_patch16_dinov3.lvd1689m` | Smaller GPU / faster iteration. Gated weights |
+| `vit_base_patch14_reg4_dinov2.lvd142m` | Ungated fallback — no HF account needed, Apache-2.0 weights, nearly as good |
 | `convnext_tiny.fcmae_ft_in22k_in1k` | CPU-friendly inference target |
+
+Licensing note: DINOv3 checkpoints ship under Meta's custom DINOv3 license;
+DINOv2 is Apache 2.0. If your deployment needs a permissive license, use the
+DINOv2 fallback — everything else in the pipeline is identical.
 
 ## Setup
 
@@ -43,10 +48,21 @@ pip install -r training/requirements.txt
 # plus the torch build for your CUDA version, see https://pytorch.org/get-started/
 ```
 
+For the default DINOv3 backbone (one-time): accept the license on the
+[model page](https://huggingface.co/facebook/dinov3-vitb16-pretrain-lvd1689m),
+then authenticate:
+
+```bash
+huggingface-cli login
+```
+
+If weight download fails with an access error, the trainer prints this fix;
+`--model vit_base_patch14_reg4_dinov2.lvd142m` skips the gate entirely.
+
 ## Train
 
 ```bash
-python training/train_patch_classifier.py --output-dir runs/dinov2b
+python training/train_patch_classifier.py --output-dir runs/dinov3b
 ```
 
 Useful flags:
@@ -87,7 +103,7 @@ Then:
 
 ```bash
 python training/infer_segments.py \
-    --checkpoint runs/dinov2b/best.pt \
+    --checkpoint runs/dinov3b/best.pt \
     --image frame_0001.jpg \
     --masks-npz frame_0001_masks.npz \
     --csv frame_0001_classes.csv

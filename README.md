@@ -57,7 +57,7 @@ Optional overrides:
 - `main.py`: FastAPI application entrypoint and router registration.
 - `docker-start.sh`: Convenience script to build/start the Docker stack and show status.
 - `cloud_bootstrap.sh`: End-to-end Linux host bootstrap for Docker deploy + systemd startup.
-- `training/`: Benthic patch classifier training (DINOv2 ViT fine-tune on the NOAA Pacific benthic-cover dataset) and SAM-segment inference — see [training/README.md](training/README.md).
+- `training/`: Benthic patch classifier training (DINOv3 ViT fine-tune on the NOAA Pacific benthic-cover dataset) and SAM-segment inference — see [training/README.md](training/README.md).
 
 ## Endpoints
 

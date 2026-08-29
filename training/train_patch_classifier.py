@@ -2,20 +2,25 @@
 """
 Patch classifier trainer for NOAA Pacific benthic-cover annotation patches.
 
-Fine-tunes a pretrained backbone (default: DINOv2 ViT-B with registers) on
+Fine-tunes a pretrained backbone (default: DINOv3 ViT-B) on
 https://huggingface.co/datasets/NMFS-OSI/noaa-pacific-benthic-cover-t1-all
 with class-imbalance handling, and saves a checkpoint that
 `infer_segments.py` can use to classify SAM-generated segments.
+
+DINOv3 weights are gated on Hugging Face: accept the license at
+https://huggingface.co/facebook/dinov3-vitb16-pretrain-lvd1689m and run
+`huggingface-cli login` once. To skip that, use the ungated DINOv2 fallback:
+`--model vit_base_patch14_reg4_dinov2.lvd142m`.
 
 Class names, counts, and the train/val split are discovered from the dataset
 at runtime, so the script works unchanged across dataset revisions (t1/t2,
 region subsets, etc.).
 
 Quick start (single GPU):
-    python train_patch_classifier.py --output-dir runs/dinov2b
+    python train_patch_classifier.py --output-dir runs/dinov3b
 
 Smoke test on a small subset:
-    python train_patch_classifier.py --limit 2000 --epochs 2 --model vit_small_patch14_reg4_dinov2.lvd142m
+    python train_patch_classifier.py --limit 2000 --epochs 2 --model vit_small_patch16_dinov3.lvd1689m
 """
 from __future__ import annotations
 
@@ -58,9 +63,10 @@ def parse_args() -> argparse.Namespace:
                    help="Stratified validation fraction when the dataset has no val/test split")
     p.add_argument("--limit", type=int, default=0, help="Use only N training examples (0 = all); for smoke tests")
 
-    p.add_argument("--model", default="vit_base_patch14_reg4_dinov2.lvd142m",
-                   help="timm model name. Lighter options: vit_small_patch14_reg4_dinov2.lvd142m, "
-                        "convnext_tiny.fcmae_ft_in22k_in1k")
+    p.add_argument("--model", default="vit_base_patch16_dinov3.lvd1689m",
+                   help="timm model name. Lighter: vit_small_patch16_dinov3.lvd1689m. "
+                        "Ungated fallback (no HF login): vit_base_patch14_reg4_dinov2.lvd142m. "
+                        "CPU-friendly: convnext_tiny.fcmae_ft_in22k_in1k")
     p.add_argument("--img-size", type=int, default=224, help="Input resolution")
     p.add_argument("--epochs", type=int, default=20)
     p.add_argument("--batch-size", type=int, default=64)
@@ -185,11 +191,22 @@ def collate(batch):
 
 def create_model(name: str, num_classes: int, img_size: int, drop_path: float) -> nn.Module:
     try:
-        return timm.create_model(name, pretrained=True, num_classes=num_classes,
-                                 img_size=img_size, drop_path_rate=drop_path)
-    except TypeError:
-        # Some backbones (e.g. ConvNeXt) don't take img_size / drop_path kwargs.
-        return timm.create_model(name, pretrained=True, num_classes=num_classes)
+        try:
+            return timm.create_model(name, pretrained=True, num_classes=num_classes,
+                                     img_size=img_size, drop_path_rate=drop_path)
+        except TypeError:
+            # Some backbones (e.g. ConvNeXt) don't take img_size / drop_path kwargs.
+            return timm.create_model(name, pretrained=True, num_classes=num_classes)
+    except Exception as e:
+        if "dinov3" in name and any(s in str(e).lower() for s in ("gated", "403", "401", "authoriz", "access")):
+            raise SystemExit(
+                f"Could not download weights for {name} — DINOv3 checkpoints are gated on "
+                f"Hugging Face.\nFix: accept the license at "
+                f"https://huggingface.co/facebook/dinov3-vitb16-pretrain-lvd1689m then run "
+                f"`huggingface-cli login`.\nOr use the ungated fallback: "
+                f"--model vit_base_patch14_reg4_dinov2.lvd142m\nOriginal error: {e}"
+            ) from e
+        raise
 
 
 def param_groups(model: nn.Module, lr: float, head_lr_mult: float, weight_decay: float):

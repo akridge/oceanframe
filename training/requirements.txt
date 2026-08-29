@@ -1,6 +1,7 @@
 torch>=2.3                 # Training framework (install the CUDA build matching your driver)
 torchvision>=0.18          # Image transforms / augmentation
-timm>=1.0.9                # Backbones (DINOv2 ViT, ConvNeXt) + pretrained weights
+timm>=1.0.20               # Backbones (DINOv3/DINOv2 ViT, ConvNeXt); >=1.0.20 for DINOv3 model defs
+huggingface-hub>=0.24      # HF auth for gated DINOv3 weights (huggingface-cli login)
 datasets>=2.19             # Loads the Hugging Face benthic-cover dataset
 scikit-learn>=1.4          # Balanced accuracy, macro-F1, per-class report
 pandas>=2.0                # Confusion-matrix / report export
