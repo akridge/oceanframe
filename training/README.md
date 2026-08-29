@@ -93,11 +93,34 @@ python training/infer_segments.py \
     --csv frame_0001_classes.csv
 ```
 
-Each segment is cropped at its bbox with 25% context padding (matching the
-training patch geometry) and classified; output JSON/CSV carries per-segment
-top-k labels plus an **area-weighted percent-cover summary** per image.
-`--apply-mask` suppresses background pixels inside the crop — try both; bbox
-crops usually win because the model was trained on full rectangular patches.
+Two inference modes (`--mode`):
+
+- **`bbox`** (default): one padded bounding-box crop per segment. Fine for
+  small, homogeneous segments from exhaustive "segment everything" runs.
+- **`points`**: samples ~8+ fixed-size patches (`--patch-px`) at points inside
+  each mask and averages the predictions. **Use this for prompted SAM3**
+  (e.g. text prompt "coral"), where one segment can be an entire colony:
+  fixed-size point patches match how the training data was made (patches
+  around point annotations), avoid the scale mismatch of resizing a whole
+  colony down to 224 px, and the reported `point_mixture` exposes
+  heterogeneous segments (live coral vs. turf-covered skeleton vs. CCA rim).
+
+Output JSON/CSV carries per-segment top-k labels plus two cover summaries:
+`percent_cover_of_image` (denominator = full image, with an `_unsegmented`
+remainder) and `percent_cover_by_segmented_area`. With concept-prompted masks
+("coral" only), only the image-area numbers are meaningful whole-image cover —
+prompt each concept you care about, or run exhaustive segmentation, if you
+need total benthic cover.
+
+### Prompted-SAM3 ("coral" text prompt) workflow notes
+
+The classifier doubles as a **verifier** of SAM3's proposals: SAM3's
+open-vocabulary understanding of benthic taxa is loose, so some "coral"
+segments will really be CCA, macroalgae, or dead skeleton — the per-segment
+labels let you filter those false positives, and `point_mixture` tells you
+when a colony-sized segment is only partly live coral. No dense per-pixel
+model is needed for this; point sampling inside the mask approximates a dense
+read-out at whatever density you choose (`--points-per-segment`).
 
 ## Tips
 
